@@ -8,10 +8,26 @@ import yaml
 import shutil
 from kubernetes import client, config
 
+global JID
 JID = []
-prefix = "" 
-schedd = htcondor.Schedd()  
 
+global prefix
+prefix = ""
+
+def read_yaml_file(file_path):
+    with open(file_path, 'r') as file:
+        try:
+            data = yaml.safe_load(file)
+            return data
+        except yaml.YAMLError as e:
+            print("Error reading YAML file:", e)
+            return None
+global InterLinkConfigInst 
+interlink_config_path = "./InterLinkConfig.yaml"
+InterLinkConfigInst = read_yaml_file(interlink_config_path)
+print(InterLinkConfigInst)
+
+#schedd = htcondor.Schedd()  
 #type InterLinkConfig struct {
 #	VKTokenFile    string `yaml:"VKTokenFile"`
 #	Interlinkurl   string `yaml:"InterlinkURL"`
@@ -33,22 +49,18 @@ schedd = htcondor.Schedd()
 #	set            bool
 #}
 
-def read_yaml_file(file_path):
-    with open(file_path, 'r') as file:
-        try:
-            data = yaml.safe_load(file)
-            return data
-        except yaml.YAMLError as e:
-            print("Error reading YAML file:", e)
-            return None
 
 def prepare_envs(container):
     env = ["--env"]
     env_data = []
-    for env_var in container.env:
-        env_data.append(f"{env_var.name}={env_var.value}")
-    env.append(",".join(env_data))
-    return env
+    try:
+        for env_var in container.env:
+            env_data.append(f"{env_var.name}={env_var.value}")
+        env.append(",".join(env_data))
+        return env
+    except:
+        logging.info(f"Container has no env specified")
+        return [""]
 
 def prepare_mounts(container, pod):
     mounts = ["--bind"]
@@ -62,36 +74,40 @@ def prepare_mounts(container, pod):
         logging.info(f"Successfully created folder {pod_name_folder}")
     except Exception as e:
         logging.error(e)
-
-    for mount_var in container["volume_mounts"]:
-        path = ""
-        for vol in pod.spec.volumes:
-            if vol.name == mount_var.name:
-                pod_volume_spec = vol.volume_source
-            if pod_volume_spec and pod_volume_spec.config_map:
-                config_maps_paths, envs = mount_config_maps(container, pod)
-                for i, path in enumerate(config_maps_paths):
-                    if os.getenv("SHARED_FS") != "true":
-                        dirs = path.split(":")
-                        split_dirs = dirs[0].split("/")
-                        dir_ = os.path.join(*split_dirs[:-1])
-                        prefix += f"\nmkdir -p {dir_} && touch {dirs[0]} && echo ${envs[i]} > {dirs[0]}"
+    try:
+        for mount_var in container["volume_mounts"]:
+            path = ""
+            for vol in pod.spec.volumes:
+                if vol.name == mount_var.name:
+                    pod_volume_spec = vol.volume_source
+                if pod_volume_spec and pod_volume_spec.config_map:
+                    config_maps_paths, envs = mount_config_maps(container, pod)
+                    for i, path in enumerate(config_maps_paths):
+                        if os.getenv("SHARED_FS") != "true":
+                            dirs = path.split(":")
+                            split_dirs = dirs[0].split("/")
+                            dir_ = os.path.join(*split_dirs[:-1])
+                            prefix += f"\nmkdir -p {dir_} && touch {dirs[0]} && echo ${envs[i]} > {dirs[0]}"
+                        mount_data.append(path)
+                elif pod_volume_spec and pod_volume_spec.secret:
+                    secrets_paths, envs = mount_secrets(container, pod)
+                    for i, path in enumerate(secrets_paths):
+                        if os.getenv("SHARED_FS") != "true":
+                            dirs = path.split(":")
+                            split_dirs = dirs[0].split("/")
+                            dir_ = os.path.join(*split_dirs[:-1])
+                            prefix += f"\nmkdir -p {dir_} && touch {dirs[0]} && echo ${envs[i]} > {dirs[0]}"
+                        mount_data.append(path)
+                elif pod_volume_spec and pod_volume_spec.empty_dir:
+                    path = mount_empty_dir(container, pod)
                     mount_data.append(path)
-            elif pod_volume_spec and pod_volume_spec.secret:
-                secrets_paths, envs = mount_secrets(container, pod)
-                for i, path in enumerate(secrets_paths):
-                    if os.getenv("SHARED_FS") != "true":
-                        dirs = path.split(":")
-                        split_dirs = dirs[0].split("/")
-                        dir_ = os.path.join(*split_dirs[:-1])
-                        prefix += f"\nmkdir -p {dir_} && touch {dirs[0]} && echo ${envs[i]} > {dirs[0]}"
-                    mount_data.append(path)
-            elif pod_volume_spec and pod_volume_spec.empty_dir:
-                path = mount_empty_dir(container, pod)
-                mount_data.append(path)
-            else:
-                # Implement logic for other volume types if required.
-                logging.info("\n*******************\n*To be implemented*\n*******************")
+                else:
+                    # Implement logic for other volume types if required.
+                    logging.info("\n*******************\n*To be implemented*\n*******************")
+    except:
+        logging.info(f"Container has no volume mount")
+        return [""]
+        
 
     path_hardcoded = ("/cvmfs/grid.cern.ch/etc/grid-security:/etc/grid-security" + "," +
                       "/cvmfs:/cvmfs" + "," +
@@ -219,27 +235,30 @@ def mount_empty_dir(container, pod):
 
 def produce_htcondor_script(container, metadata, command):
     executable_path = f"/tmp/{container['Name']}.sh"
-    with open(executable_path, "w") as f:
-        prefix += f"\n{InterLinkConfigInst['Commandprefix']}"
-        batch_macros = f"""#!/bin/bash
-        . ~/.bash_profile
-        export SINGULARITYENV_SINGULARITY_TMPDIR=$CINECA_SCRATCH
-        export SINGULARITYENV_SINGULARITY_CACHEDIR=$CINECA_SCRATCH
-        pwd; hostname; date{prefix}; {command};
-        """    
-    job = {
-        "executable": "{}".format(executable_path),  # the program to run on the execute node
-        "output": "{}{}.out".format(InterLinkConfigInst['DataRootFolder'], container['Name']) ,      # anything the job prints to standard output will end up in this file
-        "error": "{}{}.err".format(InterLinkConfigInst['DataRootFolder'], container['Name']) ,         # anything the job prints to standard error will end up in this file
-        "log": "{}{}.log".format(InterLinkConfigInst['DataRootFolder'], container['Name'])   ,          # this file will contain a record of what happened to the job
-        "request_cpus": "1",            # how many CPU cores we want 
-        "request_memory": "128MB",      # how much memory we want
-        "request_disk": "128MB",        # how much disk space we want
-        } 
-        
-    if "htcondor-job.knoc.io/sitename" in metadata.annotations:
-        sitename = metadata.annotations["htcondor-job.knoc.io/sitename"]
-        job["requirements"] = f'(SiteName == "{sitename}")'
+    try:
+        with open(executable_path, "w") as f:
+            prefix += f"\n{InterLinkConfigInst['CommandPrefix']}"
+            batch_macros = f"""#!/bin/bash
+            . ~/.bash_profile
+            export SINGULARITYENV_SINGULARITY_TMPDIR=$CINECA_SCRATCH
+            export SINGULARITYENV_SINGULARITY_CACHEDIR=$CINECA_SCRATCH
+            pwd; hostname; date{prefix}; {command};
+            """    
+        job = {
+            "executable": "{}".format(executable_path),  # the program to run on the execute node
+            "output": "{}{}.out".format(InterLinkConfigInst['DataRootFolder'], container['Name']) ,      # anything the job prints to standard output will end up in this file
+            "error": "{}{}.err".format(InterLinkConfigInst['DataRootFolder'], container['Name']) ,         # anything the job prints to standard error will end up in this file
+            "log": "{}{}.log".format(InterLinkConfigInst['DataRootFolder'], container['Name'])   ,          # this file will contain a record of what happened to the job
+            "request_cpus": "1",            # how many CPU cores we want 
+            "request_memory": "128MB",      # how much memory we want
+            "request_disk": "128MB",        # how much disk space we want
+            } 
+            
+        if "htcondor-job.knoc.io/sitename" in metadata.annotations:
+            sitename = metadata.annotations["htcondor-job.knoc.io/sitename"]
+            job["requirements"] = f'(SiteName == "{sitename}")'
+    except:
+        print(InterLinkConfigInst)
 
     return htcondor.Submit(job)
 
@@ -260,14 +279,19 @@ def delete_container(container):
     os.remove(f"{InterLinkConfigInst['DataRootFolder']}{container['Name']}.jid")
     os.remove(f"{InterLinkConfigInst['DataRootFolder']}{container['Name']}")
 
-def SubmitHandler(w, r):
+#def SubmitHandler(w, r):
+def SubmitHandler():
     logging.info("HTCondor Sidecar: received Submit call")
-    body_bytes = r.read()
-    try:
-        req = json.loads(body_bytes)
-    except json.JSONDecodeError as e:
-        logging.error("Error decoding JSON:", e)
-        return
+    #body_bytes = r.read()
+    #try:
+    #    req = json.loads(body_bytes)
+    #except json.JSONDecodeError as e:
+    #    logging.error("Error decoding JSON:", e)
+    #    return
+    req = request.get_json()
+    if req is None or not isinstance(req, dict):
+        logging.error("Invalid request data")
+        return "Invalid request data", 400
     if os.getenv("KUBECONFIG") == "":
         time.sleep(1)
     try:
@@ -312,6 +336,7 @@ def SubmitHandler(w, r):
                 JID.append({"JID": jid, "Pod": pod})
             except FileNotFoundError:
                 logging.error("Unable to read JID from file")
+    return "Job submitted successfully", 200
 
 def StopHandler(w, r):
     logging.info("HTCondor Sidecar: received Stop call")
@@ -388,10 +413,6 @@ def SetKubeCFGHandler(w, r):
 
 # The above functions can be used as handlers for appropriate endpoints in your web server.
 from flask import Flask, request
-
-interlink_config_path = "./InterLinkConfig.yaml"
-global InterLinkConfigInst 
-InterLinkConfigInst = read_yaml_file(interlink_config_path)
                                      
 app = Flask(__name__)
 app.add_url_rule('/submit', view_func=SubmitHandler, methods=['POST'])
