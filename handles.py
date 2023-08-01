@@ -3,10 +3,37 @@ import os
 import time
 import subprocess
 import logging
-import htcondor
 import yaml
 import shutil
 from kubernetes import client, config
+import argparse
+parser = argparse.ArgumentParser()
+
+parser.add_argument("--schedd-name", help="Schedd name", type=str, default = "")
+parser.add_argument("--schedd-host", help="Schedd host", type=str, default = "")
+parser.add_argument("--collector-host", help="Collector-host", type=str, default = "")
+parser.add_argument("--scitokens-file", help="Scitokens file", type=str, default = "")
+parser.add_argument("--cafile", help="CA file", type=str, default = "")
+parser.add_argument("--auth-method", help="Default authentication methods", type=str, default = "")
+parser.add_argument("--debug", help="Debug level", type=str, default = "")
+
+args = parser.parse_args()
+
+if args.schedd_name != "":
+    os.environ['_condor_SCHEDD_NAME'] = args.schedd_name
+if args.schedd_host != "":
+    os.environ['_condor_SCHEDD_HOST'] = args.schedd_host
+if args.collector_host != "":
+    os.environ['_condor_COLLECTOR_HOST'] = args.collector_host
+if args.scitokens_file != "":
+    os.environ['_condor_SCITOKENS_FILE'] = args.scitokens_file
+if args.cafile != "":
+    os.environ['_condor_AUTH_SSL_CLIENT_CAFILE'] = args.cafile
+if args.auth_method != "":
+    os.environ['_condor_SEC_DEFAULT_AUTHENTICATION_METHODS'] = args.auth_method
+if args.debug != "":
+    os.environ['_condor_TOOL_DEBUG'] = args.debug
+
 
 global JID
 JID = []
@@ -27,28 +54,11 @@ interlink_config_path = "./InterLinkConfig.yaml"
 InterLinkConfigInst = read_yaml_file(interlink_config_path)
 print(InterLinkConfigInst)
 
-schedd = htcondor.Schedd()
-#type InterLinkConfig struct {
-#       VKTokenFile    string `yaml:"VKTokenFile"`
-#       Interlinkurl   string `yaml:"InterlinkURL"`
-#       Sidecarurl     string `yaml:"SidecarURL"`
-#       Sbatchpath     string `yaml:"SbatchPath"`
-#       Scancelpath    string `yaml:"ScancelPath"`
-#       Interlinkport  string `yaml:"InterlinkPort"`
-#       Sidecarport    string
-#       Sidecarservice string `yaml:"SidecarService"`
-#       Commandprefix  string `yaml:"CommandPrefix"`
-#       ExportPodData  bool   `yaml:"ExportPodData"`
-#       DataRootFolder string `yaml:'DataRootFolder'`
-#       ServiceAccount string `yaml:"ServiceAccount"`
-#       Namespace      string `yaml:"Namespace"`
-#       Tsocks         bool   `yaml:"Tsocks"`
-#       Tsockspath     string `yaml:"TsocksPath"`
-#       Tsocksconfig   string `yaml:"TsocksConfig"`
-#       Tsockslogin    string `yaml:"TsocksLoginNode"`
-#       set            bool
-#}
 
+
+
+import htcondor
+schedd = htcondor.Schedd()
 
 def prepare_envs(container):
     env = ["--env"]
@@ -240,7 +250,7 @@ def produce_htcondor_script(container, metadata, command):
             #prefix += f"\n{InterLinkConfigInst['CommandPrefix']}"
             prefix_ = f"\n{InterLinkConfigInst['CommandPrefix']}"
             batch_macros = f"""#!/bin/bash
-sleep 100000000
+#sleep 100000000
 . ~/.bash_profile
 export SINGULARITYENV_SINGULARITY_TMPDIR=$CINECA_SCRATCH
 export SINGULARITYENV_SINGULARITY_CACHEDIR=$CINECA_SCRATCH
@@ -400,9 +410,9 @@ def StatusHandler():
         for jid in JID:
             print("aaaa")
             #resp["PodName"].append({'Name': pod.get('Name', "")})
-            print(jid)
+            #print(jid)
             resp["PodName"].append(jid['Pod']['ObjectMeta']['Name'])
-            print(jid)
+            #print(jid)
             query_result = schedd.query(constraint=f"ClusterId == {jid['JID']}", projection=["ClusterId", "ProcId", "Out"],)
             if len(query_result) == 1:
                 resp["PodStatus"].append({"PodStatus": "RUNNING"})
