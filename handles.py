@@ -22,31 +22,31 @@ def read_yaml_file(file_path):
         except yaml.YAMLError as e:
             print("Error reading YAML file:", e)
             return None
-global InterLinkConfigInst 
+global InterLinkConfigInst
 interlink_config_path = "./InterLinkConfig.yaml"
 InterLinkConfigInst = read_yaml_file(interlink_config_path)
 print(InterLinkConfigInst)
 
-#schedd = htcondor.Schedd()  
+schedd = htcondor.Schedd()
 #type InterLinkConfig struct {
-#	VKTokenFile    string `yaml:"VKTokenFile"`
-#	Interlinkurl   string `yaml:"InterlinkURL"`
-#	Sidecarurl     string `yaml:"SidecarURL"`
-#	Sbatchpath     string `yaml:"SbatchPath"`
-#	Scancelpath    string `yaml:"ScancelPath"`
-#	Interlinkport  string `yaml:"InterlinkPort"`
-#	Sidecarport    string
-#	Sidecarservice string `yaml:"SidecarService"`
-#	Commandprefix  string `yaml:"CommandPrefix"`
-#	ExportPodData  bool   `yaml:"ExportPodData"`
-#	DataRootFolder string `yaml:'DataRootFolder'`
-#	ServiceAccount string `yaml:"ServiceAccount"`
-#	Namespace      string `yaml:"Namespace"`
-#	Tsocks         bool   `yaml:"Tsocks"`
-#	Tsockspath     string `yaml:"TsocksPath"`
-#	Tsocksconfig   string `yaml:"TsocksConfig"`
-#	Tsockslogin    string `yaml:"TsocksLoginNode"`
-#	set            bool
+#       VKTokenFile    string `yaml:"VKTokenFile"`
+#       Interlinkurl   string `yaml:"InterlinkURL"`
+#       Sidecarurl     string `yaml:"SidecarURL"`
+#       Sbatchpath     string `yaml:"SbatchPath"`
+#       Scancelpath    string `yaml:"ScancelPath"`
+#       Interlinkport  string `yaml:"InterlinkPort"`
+#       Sidecarport    string
+#       Sidecarservice string `yaml:"SidecarService"`
+#       Commandprefix  string `yaml:"CommandPrefix"`
+#       ExportPodData  bool   `yaml:"ExportPodData"`
+#       DataRootFolder string `yaml:'DataRootFolder'`
+#       ServiceAccount string `yaml:"ServiceAccount"`
+#       Namespace      string `yaml:"Namespace"`
+#       Tsocks         bool   `yaml:"Tsocks"`
+#       Tsockspath     string `yaml:"TsocksPath"`
+#       Tsocksconfig   string `yaml:"TsocksConfig"`
+#       Tsockslogin    string `yaml:"TsocksLoginNode"`
+#       set            bool
 #}
 
 
@@ -107,7 +107,7 @@ def prepare_mounts(container, pod):
     except:
         logging.info(f"Container has no volume mount")
         return [""]
-        
+
 
     path_hardcoded = ("/cvmfs/grid.cern.ch/etc/grid-security:/etc/grid-security" + "," +
                       "/cvmfs:/cvmfs" + "," +
@@ -234,37 +234,46 @@ def mount_empty_dir(container, pod):
     return ed_path
 
 def produce_htcondor_script(container, metadata, command):
-    executable_path = f"/tmp/{container['Name']}.sh"
-    try:
+    executable_path = f"./{container['Name']}.sh"
+    if True:
         with open(executable_path, "w") as f:
-            prefix += f"\n{InterLinkConfigInst['CommandPrefix']}"
+            #prefix += f"\n{InterLinkConfigInst['CommandPrefix']}"
+            prefix_ = f"\n{InterLinkConfigInst['CommandPrefix']}"
             batch_macros = f"""#!/bin/bash
-            . ~/.bash_profile
-            export SINGULARITYENV_SINGULARITY_TMPDIR=$CINECA_SCRATCH
-            export SINGULARITYENV_SINGULARITY_CACHEDIR=$CINECA_SCRATCH
-            pwd; hostname; date{prefix}; {command};
-            """    
+sleep 100000000
+. ~/.bash_profile
+export SINGULARITYENV_SINGULARITY_TMPDIR=$CINECA_SCRATCH
+export SINGULARITYENV_SINGULARITY_CACHEDIR=$CINECA_SCRATCH
+pwd; hostname;
+"""
+            # date{prefix_};
+            f.write(batch_macros + "\n" + " ".join(command))
+
         job = {
             "executable": "{}".format(executable_path),  # the program to run on the execute node
             "output": "{}{}.out".format(InterLinkConfigInst['DataRootFolder'], container['Name']) ,      # anything the job prints to standard output will end up in this file
             "error": "{}{}.err".format(InterLinkConfigInst['DataRootFolder'], container['Name']) ,         # anything the job prints to standard error will end up in this file
             "log": "{}{}.log".format(InterLinkConfigInst['DataRootFolder'], container['Name'])   ,          # this file will contain a record of what happened to the job
-            "request_cpus": "1",            # how many CPU cores we want 
+            "request_cpus": "1",            # how many CPU cores we want
             "request_memory": "128MB",      # how much memory we want
             "request_disk": "128MB",        # how much disk space we want
-            } 
-            
-        if "htcondor-job.knoc.io/sitename" in metadata.annotations:
-            sitename = metadata.annotations["htcondor-job.knoc.io/sitename"]
-            job["requirements"] = f'(SiteName == "{sitename}")'
-    except:
+            }
+
+        try:
+            if "htcondor-job.knoc.io/sitename" in metadata.annotations:
+                sitename = metadata.annotations["htcondor-job.knoc.io/sitename"]
+                job["requirements"] = f'(SiteName == "{sitename}")'
+        except:
+            logging.info("Pod has no annotations")
+
+    else:
         print(InterLinkConfigInst)
 
     return htcondor.Submit(job)
 
 def htcondor_batch_submit(job):
     logging.info("Submitting HTCondor job")
-    submit_result = schedd.submit(job, spool = True, ) 
+    submit_result = schedd.submit(job, )#spool = True, )
     return submit_result
 
 def delete_container(container):
@@ -272,12 +281,21 @@ def delete_container(container):
     with open(f"{InterLinkConfigInst['DataRootFolder']}{container['Name']}.jid") as f:
         data = f.read()
     jid = int(data.strip())
-    schedd.act(htcondor.JobAction.Remove, f"ClusterId == {jid}") 
-    
-    os.remove(f"{InterLinkConfigInst['DataRootFolder']}{container['Name']}.out")
-    os.remove(f"{InterLinkConfigInst['DataRootFolder']}{container['Name']}.err")
+    schedd.act(htcondor.JobAction.Remove, f"ClusterId == {jid}")
+
+    #os.remove(f"{InterLinkConfigInst['DataRootFolder']}{container['Name']}.out")
+    #os.remove(f"{InterLinkConfigInst['DataRootFolder']}{container['Name']}.err")
     os.remove(f"{InterLinkConfigInst['DataRootFolder']}{container['Name']}.jid")
-    os.remove(f"{InterLinkConfigInst['DataRootFolder']}{container['Name']}")
+    #os.remove(f"{InterLinkConfigInst['DataRootFolder']}{container['Name']}")
+
+def handle_jid(container, jid, pod):
+    if True:
+        with open(f"{InterLinkConfigInst['DataRootFolder']}{container['Name']}.jid", "w") as f:
+            f.write(str(jid))
+        JID.append({"JID": jid, "Pod": pod})
+        logging.info(f"Job {jid} submitted successfully", f"{InterLinkConfigInst['DataRootFolder']}{container['Name']}.jid")
+    else:
+        logging.info("Job submission failed, couldn't retrieve JID")
 
 #def SubmitHandler(w, r):
 def SubmitHandler():
@@ -292,15 +310,15 @@ def SubmitHandler():
     if req is None or not isinstance(req, dict):
         logging.error("Invalid request data")
         return "Invalid request data", 400
-    if os.getenv("KUBECONFIG") == "":
-        time.sleep(1)
-    try:
-        config.load_kube_config(os.getenv("KUBECONFIG"))
-        api_client = client.ApiClient()
-        clientset = client.CoreV1Api(api_client)
-    except Exception as e:
-        logging.error("Unable to create a valid config:", e)
-        return
+    #if os.getenv("KUBECONFIG") == "":
+    #    time.sleep(1)
+    #try:
+    #    config.load_kube_config(os.getenv("KUBECONFIG"))
+    #    api_client = client.ApiClient()
+    #    clientset = client.CoreV1Api(api_client)
+    #except Exception as e:
+    #    logging.error("Unable to create a valid config:", e)
+    #    #return
     for pod in req.get("Pods", []):
         metadata = pod.get("ObjectMeta", {})
         containers = pod.get("Spec", {}).get("Containers", [])
@@ -327,49 +345,73 @@ def SubmitHandler():
 
             path = produce_htcondor_script(container, metadata, singularity_command)
             out = htcondor_batch_submit(path)
-            JID.append(out.cluster(), pod)
+            print(out)
+            handle_jid(container, out.cluster(), pod)
+            #JID.append(out.cluster(), pod)
             logging.info(out)
 
             try:
                 with open(InterLinkConfigInst['DataRootFolder'] + container['Name'] + ".jid", "r") as f:
                     jid = f.read()
-                JID.append({"JID": jid, "Pod": pod})
+                #JID.append({"JID": jid, "Pod": pod})
             except FileNotFoundError:
                 logging.error("Unable to read JID from file")
     return "Job submitted successfully", 200
 
-def StopHandler(w, r):
+#def StopHandler(w, r):
+def StopHandler():
     logging.info("HTCondor Sidecar: received Stop call")
-    body_bytes = r.read()
-    try:
-        req = json.loads(body_bytes)
-    except json.JSONDecodeError as e:
-        logging.error("Error decoding JSON:", e)
-        return
+    #body_bytes = r.read()
+    #try:
+    #    req = json.loads(body_bytes)
+    #except json.JSONDecodeError as e:
+    #    logging.error("Error decoding JSON:", e)
+    #    return
+    req = request.get_json()
+    if req is None or not isinstance(req, dict):
+        logging.error("Invalid request data")
+        return "Invalid request data", 400
+
     for pod in req.get("Pods", []):
         containers = pod.get("Spec", {}).get("Containers", [])
         for container in containers:
             delete_container(container)
+    return "Requested pods successfully deleted", 200
 
-def StatusHandler(w, r):
+#def StatusHandler(w, r):
+def StatusHandler():
     logging.info("HTCondor Sidecar: received GetStatus call")
-    body_bytes = r.read()
-    try:
-        req = json.loads(body_bytes)
-    except json.JSONDecodeError as e:
-        logging.error("Error decoding JSON:", e)
-        return
+    #body_bytes = r.read()
+    #try:
+    #    req = json.loads(body_bytes)
+    #except json.JSONDecodeError as e:
+    #    logging.error("Error decoding JSON:", e)
+    #    return
+
+    #req = request.get_json()
+    #if req is None or not isinstance(req, dict):
+    #    logging.error("Invalid request data")
+    #    return "Invalid request data", 400
+
     resp = {"PodName": [], "PodStatus": [], "ReturnVal": "Status"}
-    for pod in req.get("Pods", []):
+    #for pod in req.get("Pods", []):
+        #print("aaaaa")
+    if True:
         for jid in JID:
-            resp["PodName"].append({'Name': pod.get('Name', "")})
-            query_result = schedd.query(constraint=f"ClusterId == {jid}", projection=["ClusterId", "ProcId", "Out"],)   
+            print("aaaa")
+            #resp["PodName"].append({'Name': pod.get('Name', "")})
+            print(jid)
+            resp["PodName"].append(jid['Pod']['ObjectMeta']['Name'])
+            print(jid)
+            query_result = schedd.query(constraint=f"ClusterId == {jid['JID']}", projection=["ClusterId", "ProcId", "Out"],)
             if len(query_result) == 1:
                 resp["PodStatus"].append({"PodStatus": "RUNNING"})
             else:
                 resp["PodStatus"].append({"PodStatus": "STOP"})
-    w.write(json.dumps(resp))
+    #w.write(json.dumps(resp))
+    return json.dumps(resp), 200
 
+"""
 def SetKubeCFGHandler(w, r):
     logging.info("HTCondor Sidecar: received SetKubeCFG call")
     path = "/tmp/.kube/"
@@ -409,16 +451,18 @@ def SetKubeCFGHandler(w, r):
         ret_code = "500"
         w.write(ret_code.encode())
         return
-    w.write(ret_code.encode())
+    #w.write(ret_code.encode())
+    return ret_code.encode(), 200
+"""
 
 # The above functions can be used as handlers for appropriate endpoints in your web server.
 from flask import Flask, request
-                                     
+
 app = Flask(__name__)
 app.add_url_rule('/submit', view_func=SubmitHandler, methods=['POST'])
 app.add_url_rule('/stop', view_func=StopHandler, methods=['POST'])
 app.add_url_rule('/status', view_func=StatusHandler, methods=['POST'])
-app.add_url_rule('/set_kube_config', view_func=SetKubeCFGHandler, methods=['POST'])
+#app.add_url_rule('/set_kube_config', view_func=SetKubeCFGHandler, methods=['POST'])
 
 if __name__ == '__main__':
     app.run(port=8000)
