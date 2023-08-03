@@ -130,61 +130,10 @@ def prepare_mounts(container, pod):
     mounts.append(",".join(mount_data))
     return mounts
 
-#def mount_config_maps(container, pod):
-#    config_maps = {}
-#    config_map_name_paths = []
-#    envs = []
-#
-#    if InterLinkConfigInst['ExportPodData']:
-#        cmd = ["-rf", os.path.join(InterLinkConfigInst['DataRootFolder'], "configMaps")]
-#        subprocess.run(["rm"] + cmd, check=True)
-#
-#        for mount_spec in container.volume_mounts:
-#            pod_volume_spec = None
-#
-#            for vol in pod.spec.volumes:
-#                if vol.name == mount_spec.name:
-#                    pod_volume_spec = vol.volume_source
-#                    break
-#
-#            if pod_volume_spec and pod_volume_spec.config_map:
-#                cmvs = pod_volume_spec.config_map
-#                mode = os.FileMode(*pod_volume_spec.config_map.default_mode)
-#                pod_config_map_dir = os.path.join(InterLinkConfigInst['DataRootFolder'],
-#                                                  pod.namespace + "-" + str(pod.uid) + "/configMaps/", vol.name)
-#
-#                config_map = client.CoreV1Api().read_namespaced_config_map(cmvs.name, pod.namespace)
-#
-#                if config_map.data:
-#                    for key, value in config_map.data.items():
-#                        config_maps[key] = value
-#                        path = os.path.join(pod_config_map_dir, key) + (":" + mount_spec.mount_path + "/" + key + ",")
-#                        config_map_name_paths.append(path)
-#
-#                        if os.getenv("SHARED_FS") != "true":
-#                            env = str(container.name) + "_CFG_" + key
-#                            os.environ[env] = value
-#                            envs.append(env)
-#
-#                if config_maps:
-#                    if os.getenv("SHARED_FS") == "true":
-#                        cmd = ["-p", pod_config_map_dir]
-#                        subprocess.run(["mkdir"] + cmd, check=True)
-#
-#                        for key, value in config_maps.items():
-#                            full_path = os.path.join(pod_config_map_dir, key)
-#                            with open(full_path, "w") as f:
-#                                f.write(value)
-#
-#    return config_map_name_paths, envs
-
-
 def mountConfigMaps(container, pod, cfgMap):
     configMapNamePaths = []
     wd = os.getcwd()
-    print("hello")
     if InterLinkConfigInst["ExportPodData"] and "VolumeMounts" in container.keys():
-        print("hello")
         data_root_folder = InterLinkConfigInst["DataRootFolder"]
         #remove the directory where the ConfigMaps will be mounted
         cmd = ["-rf", os.path.join(wd, data_root_folder, "configMaps")]
@@ -202,7 +151,6 @@ def mountConfigMaps(container, pod, cfgMap):
                 if podVolumeSpec and "ConfigMap" in podVolumeSpec.keys():
                     #podConfigMapDir = os.path.join(wd, data_root_folder, f"{pod['ObjectMeta']['Namespace']}-{pod['ObjectMeta']['uid']}/configMaps/", vol["Name"])
                     podConfigMapDir = os.path.join(wd, data_root_folder, f"{pod['ObjectMeta']['Namespace']}/configMaps/", vol["Name"])
-                    #mode = os.FileMode(podVolumeSpec["ConfigMap"]["default_mode"])
                     if cfgMap["Data"]:
                         for key in cfgMap["Data"]:
                             path = os.path.join(wd, podConfigMapDir, key)
@@ -234,56 +182,6 @@ def mountConfigMaps(container, pod, cfgMap):
                             else:
                                 logging.error(f"Unable to remove file {full_path}: {e}")
     return configMapNamePaths
-
-
-#def mount_secrets(container, pod):
-#    secrets = {}
-#    secret_name_paths = []
-#    envs = []
-#
-#    if InterLinkConfigInst['ExportPodData']:
-#        print("hello")
-#        cmd = ["-rf", os.path.join(InterLinkConfigInst['DataRootFolder'], "secrets")]
-#        subprocess.run(["rm"] + cmd, check=True)
-#
-#        for mount_spec in container.volume_mounts:
-#            pod_volume_spec = None
-#
-#            for vol in pod.spec.volumes:
-#                if vol.name == mount_spec.name:
-#                    pod_volume_spec = vol.volume_source
-#                    break
-#
-#            if pod_volume_spec and pod_volume_spec.secret:
-#                svs = pod_volume_spec.secret
-#                mode = os.FileMode(*pod_volume_spec.secret.default_mode)
-#                pod_secret_dir = os.path.join(InterLinkConfigInst['DataRootFolder'],
-#                                              pod.namespace + "-" + str(pod.uid) + "/secrets/", vol.name)
-#
-#                secret = client.CoreV1Api().read_namespaced_secret(svs.secret_name, pod.namespace)
-#
-#                if secret.data:
-#                    for key, value in secret.data.items():
-#                        secrets[key] = value
-#                        path = os.path.join(pod_secret_dir, key) + (":" + mount_spec.mount_path + "/" + key + ",")
-#                        secret_name_paths.append(path)
-#
-#                        if os.getenv("SHARED_FS") != "true":
-#                            env = str(container.name) + "_SECRET_" + key
-#                            os.environ[env] = value
-#                            envs.append(env)
-#
-#                if secrets:
-#                    if os.getenv("SHARED_FS") == "true":
-#                        cmd = ["-p", pod_secret_dir]
-#                        subprocess.run(["mkdir"] + cmd, check=True)
-#
-#                        for key, value in secrets.items():
-#                            full_path = os.path.join(pod_secret_dir, key)
-#                            with open(full_path, "wb") as f:
-#                                f.write(value)
-#
-#    return secret_name_paths, envs
 
 
 def mountSecrets(container, pod, secret):
@@ -334,22 +232,18 @@ def mountSecrets(container, pod, secret):
                             logging.error(f"Unable to remove file {full_path}: {e}")
     return secret_name_paths
 
-
-
-
-
 def mount_empty_dir(container, pod):
     ed_path = None
-    if InterLinkConfigInst['ExportPodData']:
+    if InterLinkConfigInst['ExportPodData'] and "VolumeMounts" in container.keys():
         cmd = ["-rf", os.path.join(InterLinkConfigInst['DataRootFolder'], "emptyDirs")]
         subprocess.run(["rm"] + cmd, check=True)
-        for mount_spec in container["volume_mounts"]:
+        for mount_spec in container["VolumeMounts"]:
             pod_volume_spec = None
-            for vol in pod["spec"]["volumes"]:
-                if vol.name == mount_spec["name"]:
-                    pod_volume_spec = vol["volume_source"]
+            for vol in pod["Spec"]["Volumes"]:
+                if vol.name == mount_spec["Name"]:
+                    pod_volume_spec = vol["VolumeSource"]
                     break
-            if pod_volume_spec and pod_volume_spec["empty_dir"]:
+            if pod_volume_spec and pod_volume_spec["EmptyDir"]:
                 ed_path = os.path.join(InterLinkConfigInst['DataRootFolder'],
                                        pod.namespace + "-" + str(pod.uid) + "/emptyDirs/" + vol.name)
                 cmd = ["-p", ed_path]
@@ -358,7 +252,7 @@ def mount_empty_dir(container, pod):
 
     return ed_path
 
-def produce_htcondor_script(container, metadata, command):
+def produce_htcondor_singularity_script(container, metadata, command):
     executable_path = f"./{container['Name']}.sh"
     if True:
         with open(executable_path, "w") as f:
@@ -384,15 +278,73 @@ pwd; hostname;
             "request_disk": "128MB",        # how much disk space we want
             }
 
-        try:
-            if "htcondor-job.knoc.io/sitename" in metadata.annotations:
-                sitename = metadata.annotations["htcondor-job.knoc.io/sitename"]
-                job["requirements"] = f'(SiteName == "{sitename}")'
-        except:
-            logging.info("Pod has no annotations")
+        os.chmod(executable_path, 0o0777)
+        #try:
+        #    if "htcondor-job.knoc.io/sitename" in metadata.annotations:
+        #        sitename = metadata.annotations["htcondor-job.knoc.io/sitename"]
+        #        job["requirements"] = f'(SiteName == "{sitename}")'
+        #except:
+        #    logging.info("Pod has no annotations")
 
     else:
         print(InterLinkConfigInst)
+
+    return htcondor.Submit(job)
+
+
+def produce_htcondor_host_script(container, metadata, t2):
+    executable_path = f"./{container['Name']}.sh"
+    if True:
+        with open(executable_path, "w") as f:
+            #prefix += f"\n{InterLinkConfigInst['CommandPrefix']}"
+            prefix_ = f"\n{InterLinkConfigInst['CommandPrefix']}"
+            batch_macros = f"""#!/bin/bash
+sleep 100000000
+echo "SiteName =" $1
+
+SiteName=$1
+
+echo "iniziamo ora " `date`
+wget --no-check-certificate https://cmsdoc.cern.ch/~spiga/condor-10.1.0-1-x86_64_CentOS7-stripped.tgz .
+tar -zxvf condor-10.1.0-1-x86_64_CentOS7-stripped.tgz
+cd condor-10.1.0-1-x86_64_CentOS7-stripped/
+echo " "
+echo "lancio il wn "  `date`
+./setupwn.sh $SiteName
+
+sleep 14000
+echo " ho aspettato 300 " `date`
+ps -auxf
+echo "========"
+echo "========"
+cat var/log/condor/MasterLog
+echo "========"
+echo "========"
+echo "esco "
+cat var/log/condor/StartLog
+"""
+            # date{prefix_};
+            f.write(batch_macros)
+
+        job = {
+            "executable": "{}".format(executable_path),  # the program to run on the execute node
+            "arguments": "{}".format(t2),  # the program to run on the execute node
+            "output": "{}{}.out".format(InterLinkConfigInst['DataRootFolder'], container['Name']) ,      # anything the job prints to standard output will end up in this file
+            "error": "{}{}.err".format(InterLinkConfigInst['DataRootFolder'], container['Name']) ,         # anything the job prints to standard error will end up in this file
+            "log": "{}{}.log".format(InterLinkConfigInst['DataRootFolder'], container['Name'])   ,          # this file will contain a record of what happened to the job
+            "request_cpus": "1",            # how many CPU cores we want
+            "request_memory": "128MB",      # how much memory we want
+            "request_disk": "128MB",        # how much disk space we want
+            }
+
+        #try:
+        #    if "htcondor-job.knoc.io/sitename" in metadata.annotations:
+        #        sitename = metadata.annotations["htcondor-job.knoc.io/sitename"]
+        #        job["requirements"] = f'(SiteName == "{sitename}")'
+        #except:
+        #    logging.info("Pod has no annotations")
+
+        os.chmod(executable_path, 0o0777)
 
     return htcondor.Submit(job)
 
@@ -446,34 +398,38 @@ def SubmitHandler():
     #    #return
     for pod_ in req.get("Pods", []):
         pod = pod_.get("Pod", {})
-        print("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-        print(pod)
         metadata = pod.get("ObjectMeta", {})
         containers = pod.get("Spec", {}).get("Containers", [])
         for container in containers:
-            print("container????")
             logging.info(f"Beginning script generation for container {container['Name']}")
-            commstr1 = ["singularity", "exec"]
 
-            envs = prepare_envs(container)
-            image = ""
-            mounts = prepare_mounts(container, pod)
-            print("bbbbbbbbbbbbbbbbbbbbbbbb")
-            if container["Image"].startswith("/"):
-                image_uri = metadata.get("Annotations", {}).get("htcondor-job.knoc.io/image-root", None)
-                if image_uri:
-                    logging.info(image_uri)
-                    image = image_uri + container["Image"]
+            if not "host" in container["Image"]:
+                commstr1 = ["singularity", "exec"]
+
+                envs = prepare_envs(container)
+                image = ""
+                mounts = prepare_mounts(container, pod)
+                if container["Image"].startswith("/"):
+                    image_uri = metadata.get("Annotations", {}).get("htcondor-job.knoc.io/image-root", None)
+                    if image_uri:
+                        logging.info(image_uri)
+                        image = image_uri + container["Image"]
+                    else:
+                        logging.warning("image-uri annotation not specified for path in remote filesystem")
                 else:
-                    logging.warning("image-uri annotation not specified for path in remote filesystem")
-            else:
-                image = "docker://" + container["Image"]
-            image = container["Image"]
+                    image = "docker://" + container["Image"]
+                image = container["Image"]
 
-            logging.info("Appending all commands together...")
-            singularity_command = commstr1 + envs + mounts + [image] + container["Command"] + container["Args"]
-            print("singularity_command:", singularity_command)
-            path = produce_htcondor_script(container, metadata, singularity_command)
+                logging.info("Appending all commands together...")
+                singularity_command = commstr1 + envs + mounts + [image] + container["Command"] + container["Args"]
+                print("singularity_command:", singularity_command)
+                path = produce_htcondor_singularity_script(container, metadata, singularity_command)
+
+            else:
+                sitename = container["Image"].split(":")[-1]
+                print(sitename)
+                path = produce_htcondor_host_script(container, metadata, sitename)
+
             out = htcondor_batch_submit(path)
             #print(out)
             handle_jid(container, out.cluster(), pod)
@@ -549,49 +505,6 @@ def StatusHandler():
     #w.write(json.dumps(resp))
     return json.dumps(resp), 200
 
-"""
-def SetKubeCFGHandler(w, r):
-    logging.info("HTCondor Sidecar: received SetKubeCFG call")
-    path = "/tmp/.kube/"
-    ret_code = "200"
-    body_bytes = r.read()
-    try:
-        req = json.loads(body_bytes)
-    except json.JSONDecodeError as e:
-        logging.error("Error decoding JSON:", e)
-        w.write(ret_code.encode())
-        return
-    logging.info("Creating folder to save KubeConfig")
-    try:
-        os.makedirs(path, exist_ok=True)
-        logging.info("Successfully created folder")
-    except Exception as e:
-        logging.error(e)
-        ret_code = "500"
-        w.write(ret_code.encode())
-        return
-    logging.info("Creating the actual KubeConfig file")
-    try:
-        with open(path + "config", "w") as config_file:
-            config_file.write(req.get("Body", ""))
-        logging.info("Successfully created file")
-    except Exception as e:
-        logging.error(e)
-        ret_code = "500"
-        w.write(ret_code.encode())
-        return
-    logging.info("Setting KUBECONFIG env")
-    try:
-        os.environ["KUBECONFIG"] = path + "config"
-        logging.info(f"Successfully set KUBECONFIG to {path}config")
-    except Exception as e:
-        logging.error(e)
-        ret_code = "500"
-        w.write(ret_code.encode())
-        return
-    #w.write(ret_code.encode())
-    return ret_code.encode(), 200
-"""
 
 # The above functions can be used as handlers for appropriate endpoints in your web server.
 from flask import Flask, request
@@ -600,7 +513,6 @@ app = Flask(__name__)
 app.add_url_rule('/submit', view_func=SubmitHandler, methods=['POST'])
 app.add_url_rule('/stop', view_func=StopHandler, methods=['POST'])
 app.add_url_rule('/status', view_func=StatusHandler, methods=['POST'])
-#app.add_url_rule('/set_kube_config', view_func=SetKubeCFGHandler, methods=['POST'])
 
 if __name__ == '__main__':
-    app.run(port=8000)
+    app.run(port=8000, debug=True)
