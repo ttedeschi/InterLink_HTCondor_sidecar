@@ -55,8 +55,6 @@ InterLinkConfigInst = read_yaml_file(interlink_config_path)
 print(InterLinkConfigInst)
 
 
-
-
 import htcondor
 schedd = htcondor.Schedd()
 
@@ -84,37 +82,37 @@ def prepare_mounts(container, pod):
         logging.info(f"Successfully created folder {pod_name_folder}")
     except Exception as e:
         logging.error(e)
-    try:
-        for mount_var in container["volume_mounts"]:
+    if True:
+        for mount_var in container["VolumeMounts"]:
             path = ""
-            for vol in pod.spec.volumes:
-                if vol.name == mount_var.name:
-                    pod_volume_spec = vol.volume_source
-                if pod_volume_spec and pod_volume_spec.config_map:
-                    config_maps_paths, envs = mount_config_maps(container, pod)
-                    for i, path in enumerate(config_maps_paths):
-                        if os.getenv("SHARED_FS") != "true":
-                            dirs = path.split(":")
-                            split_dirs = dirs[0].split("/")
-                            dir_ = os.path.join(*split_dirs[:-1])
-                            prefix += f"\nmkdir -p {dir_} && touch {dirs[0]} && echo ${envs[i]} > {dirs[0]}"
+            for vol in pod["Spec"]["Volumes"]:
+                if vol["Name"] == mount_var["Name"]:
+                    #pod_volume_spec = vol["VolumeSource"]
+                    if vol["ConfigMap"]:
+                        config_maps_paths, envs = mountConfigMaps(container, pod)
+                        for i, path in enumerate(config_maps_paths):
+                            if os.getenv("SHARED_FS") != "true":
+                                dirs = path.split(":")
+                                split_dirs = dirs[0].split("/")
+                                dir_ = os.path.join(*split_dirs[:-1])
+                                prefix += f"\nmkdir -p {dir_} && touch {dirs[0]} && echo ${envs[i]} > {dirs[0]}"
+                            mount_data.append(path)
+                    elif vol["Secret"]:
+                        secrets_paths, envs = mountSecrets(container, pod)
+                        for i, path in enumerate(secrets_paths):
+                            if os.getenv("SHARED_FS") != "true":
+                                dirs = path.split(":")
+                                split_dirs = dirs[0].split("/")
+                                dir_ = os.path.join(*split_dirs[:-1])
+                                prefix += f"\nmkdir -p {dir_} && touch {dirs[0]} && echo ${envs[i]} > {dirs[0]}"
+                            mount_data.append(path)
+                    elif vol["EmptyDir"]:
+                        path = mountEmptyDir(container, pod)
                         mount_data.append(path)
-                elif pod_volume_spec and pod_volume_spec.secret:
-                    secrets_paths, envs = mount_secrets(container, pod)
-                    for i, path in enumerate(secrets_paths):
-                        if os.getenv("SHARED_FS") != "true":
-                            dirs = path.split(":")
-                            split_dirs = dirs[0].split("/")
-                            dir_ = os.path.join(*split_dirs[:-1])
-                            prefix += f"\nmkdir -p {dir_} && touch {dirs[0]} && echo ${envs[i]} > {dirs[0]}"
-                        mount_data.append(path)
-                elif pod_volume_spec and pod_volume_spec.empty_dir:
-                    path = mount_empty_dir(container, pod)
-                    mount_data.append(path)
-                else:
-                    # Implement logic for other volume types if required.
-                    logging.info("\n*******************\n*To be implemented*\n*******************")
-    except:
+                    else:
+                        # Implement logic for other volume types if required.
+                        logging.info("\n*******************\n*To be implemented*\n*******************")
+    else:
         logging.info(f"Container has no volume mount")
         return [""]
 
@@ -127,119 +125,231 @@ def prepare_mounts(container, pod):
     mounts.append(",".join(mount_data))
     return mounts
 
-def mount_config_maps(container, pod):
-    config_maps = {}
-    config_map_name_paths = []
-    envs = []
 
-    if InterLinkConfigInst['ExportPodData']:
-        cmd = ["-rf", os.path.join(InterLinkConfigInst['DataRootFolder'], "configMaps")]
-        subprocess.run(["rm"] + cmd, check=True)
+#def mount_config_maps(container, pod):
+#    config_maps = {}
+#    config_map_name_paths = []
+#    envs = []
+#
+#    if InterLinkConfigInst['ExportPodData']:
+#        cmd = ["-rf", os.path.join(InterLinkConfigInst['DataRootFolder'], "configMaps")]
+#        subprocess.run(["rm"] + cmd, check=True)
+#
+#        for mount_spec in container.volume_mounts:
+#            pod_volume_spec = None
+#
+#            for vol in pod.spec.volumes:
+#                if vol.name == mount_spec.name:
+#                    pod_volume_spec = vol.volume_source
+#                    break
+#
+#            if pod_volume_spec and pod_volume_spec.config_map:
+#                cmvs = pod_volume_spec.config_map
+#                mode = os.FileMode(*pod_volume_spec.config_map.default_mode)
+#                pod_config_map_dir = os.path.join(InterLinkConfigInst['DataRootFolder'],
+#                                                  pod.namespace + "-" + str(pod.uid) + "/configMaps/", vol.name)
+#
+#                config_map = client.CoreV1Api().read_namespaced_config_map(cmvs.name, pod.namespace)
+#
+#                if config_map.data:
+#                    for key, value in config_map.data.items():
+#                        config_maps[key] = value
+#                        path = os.path.join(pod_config_map_dir, key) + (":" + mount_spec.mount_path + "/" + key + ",")
+#                        config_map_name_paths.append(path)
+#
+#                        if os.getenv("SHARED_FS") != "true":
+#                            env = str(container.name) + "_CFG_" + key
+#                            os.environ[env] = value
+#                            envs.append(env)
+#
+#                if config_maps:
+#                    if os.getenv("SHARED_FS") == "true":
+#                        cmd = ["-p", pod_config_map_dir]
+#                        subprocess.run(["mkdir"] + cmd, check=True)
+#
+#                        for key, value in config_maps.items():
+#                            full_path = os.path.join(pod_config_map_dir, key)
+#                            with open(full_path, "w") as f:
+#                                f.write(value)
+#
+#    return config_map_name_paths, envs
 
-        for mount_spec in container.volume_mounts:
-            pod_volume_spec = None
 
-            for vol in pod.spec.volumes:
-                if vol.name == mount_spec.name:
-                    pod_volume_spec = vol.volume_source
-                    break
+def mountConfigMaps(container, pod, cfgMap):
+    configMapNamePaths = []
+    wd = os.getcwd()
+    print("hello")
+    if InterLinkConfigInst["ExportPodData"]:
+        print("hello")
+        data_root_folder = InterLinkConfigInst["DataRootFolder"]
+        #remove the directory where the ConfigMaps will be mounted
+        cmd = ["-rf", os.path.join(wd, data_root_folder, "configMaps")]
+        shell = subprocess.Popen(["rm"] + cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        _, err = shell.communicate()
 
-            if pod_volume_spec and pod_volume_spec.config_map:
-                cmvs = pod_volume_spec.config_map
-                mode = os.FileMode(*pod_volume_spec.config_map.default_mode)
-                pod_config_map_dir = os.path.join(InterLinkConfigInst['DataRootFolder'],
-                                                  pod.namespace + "-" + str(pod.uid) + "/configMaps/", vol.name)
+        if err:
+            logging.error("Unable to delete root folder")
 
-                config_map = client.CoreV1Api().read_namespaced_config_map(cmvs.name, pod.namespace)
-
-                if config_map.data:
-                    for key, value in config_map.data.items():
-                        config_maps[key] = value
-                        path = os.path.join(pod_config_map_dir, key) + (":" + mount_spec.mount_path + "/" + key + ",")
-                        config_map_name_paths.append(path)
-
-                        if os.getenv("SHARED_FS") != "true":
-                            env = str(container.name) + "_CFG_" + key
-                            os.environ[env] = value
-                            envs.append(env)
-
-                if config_maps:
-                    if os.getenv("SHARED_FS") == "true":
-                        cmd = ["-p", pod_config_map_dir]
-                        subprocess.run(["mkdir"] + cmd, check=True)
-
-                        for key, value in config_maps.items():
-                            full_path = os.path.join(pod_config_map_dir, key)
+        for mountSpec in container["volumeMounts"]:
+            podVolumeSpec = None
+            for vol in pod["spec"]["volumes"]:
+                if vol["name"] == mountSpec["name"]:
+                    podVolumeSpec = vol["volumeSource"]
+                if podVolumeSpec and podVolumeSpec["config_map"]:
+                    podConfigMapDir = os.path.join(wd, data_root_folder, f"{pod.metadata.namespace}-{pod.metadata.uid}/configMaps/", vol.name)
+                    mode = os.FileMode(podVolumeSpec["config_map"]["default_mode"])
+                    if cfgMap["data"]:
+                        for key in cfgMap["data"]:
+                            path = os.path.join(wd, podConfigMapDir, key)
+                            path += f":{mountSpec.mount_path}/{key} "
+                            configMapNamePaths.append(path)
+                    cmd = ["-p", podConfigMapDir]
+                    shell = subprocess.Popen(["mkdir"] + cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                    execReturn, _ = shell.communicate()
+                    if execReturn:
+                        logging.error(err)
+                    else:
+                        logging.debug(f"--- Created folder {podConfigMapDir}")
+                    logging.debug("--- Writing ConfigMaps files")
+                    for k, v in cfgMap["data"].items():
+                        # TODO: Ensure that these files are deleted in failure cases
+                        full_path = os.path.join(podConfigMapDir, k)
+                        if True:
                             with open(full_path, "w") as f:
-                                f.write(value)
+                                f.write(v)
+                            os.chmod(full_path, mode)
+                            logging.debug(f"--- Written ConfigMap file {full_path}")
+                        #except Exception as e:
+                        else:
+                            logging.error(f"Could not write ConfigMap file {full_path}: {e}")
+                            if True:
+                                os.remove(full_path)
+                                logging.error(f"Unable to remove file {full_path}")
+                                #except Exception as e:
+                            else:
+                                logging.error(f"Unable to remove file {full_path}: {e}")
+    return configMapNamePaths
 
-    return config_map_name_paths, envs
 
-def mount_secrets(container, pod):
-    secrets = {}
+#def mount_secrets(container, pod):
+#    secrets = {}
+#    secret_name_paths = []
+#    envs = []
+#
+#    if InterLinkConfigInst['ExportPodData']:
+#        print("hello")
+#        cmd = ["-rf", os.path.join(InterLinkConfigInst['DataRootFolder'], "secrets")]
+#        subprocess.run(["rm"] + cmd, check=True)
+#
+#        for mount_spec in container.volume_mounts:
+#            pod_volume_spec = None
+#
+#            for vol in pod.spec.volumes:
+#                if vol.name == mount_spec.name:
+#                    pod_volume_spec = vol.volume_source
+#                    break
+#
+#            if pod_volume_spec and pod_volume_spec.secret:
+#                svs = pod_volume_spec.secret
+#                mode = os.FileMode(*pod_volume_spec.secret.default_mode)
+#                pod_secret_dir = os.path.join(InterLinkConfigInst['DataRootFolder'],
+#                                              pod.namespace + "-" + str(pod.uid) + "/secrets/", vol.name)
+#
+#                secret = client.CoreV1Api().read_namespaced_secret(svs.secret_name, pod.namespace)
+#
+#                if secret.data:
+#                    for key, value in secret.data.items():
+#                        secrets[key] = value
+#                        path = os.path.join(pod_secret_dir, key) + (":" + mount_spec.mount_path + "/" + key + ",")
+#                        secret_name_paths.append(path)
+#
+#                        if os.getenv("SHARED_FS") != "true":
+#                            env = str(container.name) + "_SECRET_" + key
+#                            os.environ[env] = value
+#                            envs.append(env)
+#
+#                if secrets:
+#                    if os.getenv("SHARED_FS") == "true":
+#                        cmd = ["-p", pod_secret_dir]
+#                        subprocess.run(["mkdir"] + cmd, check=True)
+#
+#                        for key, value in secrets.items():
+#                            full_path = os.path.join(pod_secret_dir, key)
+#                            with open(full_path, "wb") as f:
+#                                f.write(value)
+#
+#    return secret_name_paths, envs
+
+
+def mount_secrets(container, pod, secret):
     secret_name_paths = []
-    envs = []
+    wd = os.getcwd()
 
-    if InterLinkConfigInst['ExportPodData']:
-        cmd = ["-rf", os.path.join(InterLinkConfigInst['DataRootFolder'], "secrets")]
+    if commonIL.InterLinkConfigInst["ExportPodData"]:
+        data_root_folder = commonIL.InterLinkConfigInst["DataRootFolder"]
+        # Remove the directory where the secrets will be mounted
+        cmd = ["-rf", os.path.join(wd, data_root_folder, "secrets")]
         subprocess.run(["rm"] + cmd, check=True)
 
-        for mount_spec in container.volume_mounts:
+        for mount_spec in container["volumeMounts"]:
             pod_volume_spec = None
-
-            for vol in pod.spec.volumes:
-                if vol.name == mount_spec.name:
-                    pod_volume_spec = vol.volume_source
+            for vol in pod["spec"]["volumes"]:
+                if vol["name"] == mount_spec["name"]:
+                    pod_volume_spec = vol["volumeSource"]
                     break
+            if pod_volume_spec and pod_volume_spec["secret"]:
+                mode = os.FileMode(pod_volume_spec["secret"]["defaultMode"])
+                pod_secret_dir = os.path.join(wd, data_root_folder, f"{pod.metadata.namespace}-{pod.metadata.uid}/secrets/", vol["name"])
 
-            if pod_volume_spec and pod_volume_spec.secret:
-                svs = pod_volume_spec.secret
-                mode = os.FileMode(*pod_volume_spec.secret.default_mode)
-                pod_secret_dir = os.path.join(InterLinkConfigInst['DataRootFolder'],
-                                              pod.namespace + "-" + str(pod.uid) + "/secrets/", vol.name)
-
-                secret = client.CoreV1Api().read_namespaced_secret(svs.secret_name, pod.namespace)
-
-                if secret.data:
-                    for key, value in secret.data.items():
-                        secrets[key] = value
-                        path = os.path.join(pod_secret_dir, key) + (":" + mount_spec.mount_path + "/" + key + ",")
+                if secret["data"]:
+                    for key in secret["data"]:
+                        path = os.path.join(pod_secret_dir, key)
+                        path += f":{mount_spec['mountPath']}/{key} "
                         secret_name_paths.append(path)
 
-                        if os.getenv("SHARED_FS") != "true":
-                            env = str(container.name) + "_SECRET_" + key
-                            os.environ[env] = value
-                            envs.append(env)
+                cmd = ["-p", pod_secret_dir]
+                subprocess.run(["mkdir"] + cmd, check=True)
 
-                if secrets:
-                    if os.getenv("SHARED_FS") == "true":
-                        cmd = ["-p", pod_secret_dir]
-                        subprocess.run(["mkdir"] + cmd, check=True)
+                logging.debug(f"--- Created folder {pod_secret_dir}")
+                logging.debug("--- Writing Secret files")
+                for k, v in secret["data"].items():
+                    # TODO: Ensure that these files are deleted in failure cases
+                    full_path = os.path.join(pod_secret_dir, k)
+                    try:
+                        with open(full_path, "wb") as f:
+                            f.write(v)
+                        os.chmod(full_path, mode)
+                        logging.debug(f"--- Written Secret file {full_path}")
+                    except Exception as e:
+                        logging.error(f"Could not write Secret file {full_path}: {e}")
+                        try:
+                            os.remove(full_path)
+                            logging.error(f"Unable to remove file {full_path}")
+                        except Exception as e:
+                            logging.error(f"Unable to remove file {full_path}: {e}")
+    return secret_name_paths
 
-                        for key, value in secrets.items():
-                            full_path = os.path.join(pod_secret_dir, key)
-                            with open(full_path, "wb") as f:
-                                f.write(value)
 
-    return secret_name_paths, envs
+
+
 
 def mount_empty_dir(container, pod):
     ed_path = None
     if InterLinkConfigInst['ExportPodData']:
         cmd = ["-rf", os.path.join(InterLinkConfigInst['DataRootFolder'], "emptyDirs")]
         subprocess.run(["rm"] + cmd, check=True)
-        for mount_spec in container.volume_mounts:
+        for mount_spec in container["volume_mounts"]:
             pod_volume_spec = None
-            for vol in pod.spec.volumes:
-                if vol.name == mount_spec.name:
-                    pod_volume_spec = vol.volume_source
+            for vol in pod["spec"]["volumes"]:
+                if vol.name == mount_spec["name"]:
+                    pod_volume_spec = vol["volume_source"]
                     break
-            if pod_volume_spec and pod_volume_spec.empty_dir:
+            if pod_volume_spec and pod_volume_spec["empty_dir"]:
                 ed_path = os.path.join(InterLinkConfigInst['DataRootFolder'],
                                        pod.namespace + "-" + str(pod.uid) + "/emptyDirs/" + vol.name)
                 cmd = ["-p", ed_path]
                 subprocess.run(["mkdir"] + cmd, check=True)
-                ed_path += (":" + mount_spec.mount_path + "/" + mount_spec.name + ",")
+                ed_path += (":" + mount_spec["mount_path"] + "/" + mount_spec["name"] + ",")
 
     return ed_path
 
@@ -250,7 +360,7 @@ def produce_htcondor_script(container, metadata, command):
             #prefix += f"\n{InterLinkConfigInst['CommandPrefix']}"
             prefix_ = f"\n{InterLinkConfigInst['CommandPrefix']}"
             batch_macros = f"""#!/bin/bash
-#sleep 100000000
+sleep 100000000
 . ~/.bash_profile
 export SINGULARITYENV_SINGULARITY_TMPDIR=$CINECA_SCRATCH
 export SINGULARITYENV_SINGULARITY_CACHEDIR=$CINECA_SCRATCH
@@ -329,16 +439,21 @@ def SubmitHandler():
     #except Exception as e:
     #    logging.error("Unable to create a valid config:", e)
     #    #return
-    for pod in req.get("Pods", []):
+    for pod_ in req.get("Pods", []):
+        pod = pod_.get("Pod", {})
+        print("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+        print(pod)
         metadata = pod.get("ObjectMeta", {})
         containers = pod.get("Spec", {}).get("Containers", [])
         for container in containers:
+            print("container????")
             logging.info(f"Beginning script generation for container {container['Name']}")
             commstr1 = ["singularity", "exec"]
 
             envs = prepare_envs(container)
             image = ""
             mounts = prepare_mounts(container, pod)
+            print("bbbbbbbbbbbbbbbbbbbbbbbb")
             if container["Image"].startswith("/"):
                 image_uri = metadata.get("Annotations", {}).get("htcondor-job.knoc.io/image-root", None)
                 if image_uri:
@@ -352,19 +467,21 @@ def SubmitHandler():
 
             logging.info("Appending all commands together...")
             singularity_command = commstr1 + envs + mounts + [image] + container["Command"] + container["Args"]
-
+            print("singularity_command:", singularity_command)
             path = produce_htcondor_script(container, metadata, singularity_command)
             out = htcondor_batch_submit(path)
-            print(out)
+            #print(out)
             handle_jid(container, out.cluster(), pod)
             #JID.append(out.cluster(), pod)
             logging.info(out)
 
-            try:
+            #try:
+            if True:
                 with open(InterLinkConfigInst['DataRootFolder'] + container['Name'] + ".jid", "r") as f:
                     jid = f.read()
                 #JID.append({"JID": jid, "Pod": pod})
-            except FileNotFoundError:
+                #except FileNotFoundError:
+            else:
                 logging.error("Unable to read JID from file")
     return "Job submitted successfully", 200
 
@@ -398,26 +515,32 @@ def StatusHandler():
     #    logging.error("Error decoding JSON:", e)
     #    return
 
-    #req = request.get_json()
-    #if req is None or not isinstance(req, dict):
-    #    logging.error("Invalid request data")
-    #    return "Invalid request data", 400
+    req = request.get_json()
+    if req is None or not isinstance(req, dict):
+        logging.error("Invalid request data")
+        return "Invalid request data", 400
 
     resp = {"PodName": [], "PodStatus": [], "ReturnVal": "Status"}
-    #for pod in req.get("Pods", []):
-        #print("aaaaa")
-    if True:
-        for jid in JID:
-            print("aaaa")
+    for pod in req.get("Pods", []):
+        print("aaaaa")
+        #if True:
+        print(JID[0]['Pod']['ObjectMeta']['Name'])
+        print(pod['ObjectMeta']['Name'])
+        pod_JID = list(filter(lambda jid: jid['Pod']['ObjectMeta']['Name'] == pod['ObjectMeta']['Name'], JID))
+        ok = True
+        print(pod_JID)
+        for jid in pod_JID:
             #resp["PodName"].append({'Name': pod.get('Name', "")})
-            #print(jid)
             resp["PodName"].append(jid['Pod']['ObjectMeta']['Name'])
-            #print(jid)
-            query_result = schedd.query(constraint=f"ClusterId == {jid['JID']}", projection=["ClusterId", "ProcId", "Out"],)
-            if len(query_result) == 1:
-                resp["PodStatus"].append({"PodStatus": "RUNNING"})
-            else:
-                resp["PodStatus"].append({"PodStatus": "STOP"})
+            query_result = schedd.query(constraint=f"ClusterId == {jid['JID']}", projection=["ClusterId", "ProcId", "Out", "JobStatus"],)
+            print(query_result)
+            if query_result[0]['JobStatus'] != 2:
+                ok = False
+                continue
+        if ok == True:
+            resp["PodStatus"].append({"PodStatus": "RUNNING"})
+        else:
+            resp["PodStatus"].append({"PodStatus": "STOP"})
     #w.write(json.dumps(resp))
     return json.dumps(resp), 200
 
