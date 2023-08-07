@@ -333,8 +333,15 @@ cat var/log/condor/StartLog
             "error": "{}{}.err".format(InterLinkConfigInst['DataRootFolder'], container['Name']) ,         # anything the job prints to standard error will end up in this file
             "log": "{}{}.log".format(InterLinkConfigInst['DataRootFolder'], container['Name'])   ,          # this file will contain a record of what happened to the job
             "request_cpus": "1",            # how many CPU cores we want
+            #"request_cpus": "8",            # how many CPU cores we want
             "request_memory": "128MB",      # how much memory we want
+            #"request_memory": "16000",      # how much memory we want
             "request_disk": "128MB",        # how much disk space we want
+            "when_to_transfer_output": "ON_EXIT",
+            "+MaxWallTimeMins" : "60",
+            "+WMAgent_AgentName": "whatever",
+            #"Queue": "1"
+
             }
 
         #try:
