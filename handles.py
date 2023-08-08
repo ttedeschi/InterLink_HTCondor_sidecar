@@ -5,7 +5,7 @@ import subprocess
 import logging
 import yaml
 import shutil
-from kubernetes import client, config
+#from kubernetes import client, config
 import argparse
 parser = argparse.ArgumentParser()
 
@@ -50,7 +50,7 @@ def read_yaml_file(file_path):
             print("Error reading YAML file:", e)
             return None
 global InterLinkConfigInst
-interlink_config_path = "./InterLinkConfig.yaml"
+interlink_config_path = "../interLink/kustomizations/InterLinkConfig.yaml"
 InterLinkConfigInst = read_yaml_file(interlink_config_path)
 print(InterLinkConfigInst)
 
@@ -73,7 +73,7 @@ def prepare_envs(container):
 def prepare_mounts(container, pod):
     mounts = ["--bind"]
     mount_data = []
-    pod_name = container['Name'].split("-")[:6] if len(container['Name'].split("-")) > 6 else container['Name'].split("-")
+    pod_name = container['name'].split("-")[:6] if len(container['name'].split("-")) > 6 else container['name'].split("-")
     pod_volume_spec = None
     pod_name_folder = os.path.join(InterLinkConfigInst['DataRootFolder'], "-".join(pod_name[:-1]))
 
@@ -82,18 +82,18 @@ def prepare_mounts(container, pod):
         logging.info(f"Successfully created folder {pod_name_folder}")
     except Exception as e:
         logging.error(e)
-    if "VolumeMounts" in container.keys():
-        for mount_var in container["VolumeMounts"]:
+    if "volumeMounts" in container.keys():
+        for mount_var in container["volumeMounts"]:
             path = ""
-            for vol in pod["Spec"]["Volumes"]:
-                if vol["Name"] == mount_var["Name"]:
-                    pod_volume_spec = vol["VolumeSource"]
+            for vol in pod["spec"]["volumes"]:
+                if vol["name"] == mount_var["name"]:
+                    pod_volume_spec = vol["volumeSource"]
                 else:
                     continue
                 if pod_volume_spec and "ConfigMap" in pod_volume_spec.keys():
                     config_maps = pod_volume_spec["ConfigMap"]
                     config_maps_paths = mountConfigMaps(container, pod, config_maps)
-                    print("bind as configmap", mount_var["Name"], vol["Name"])
+                    print("bind as configmap", mount_var["name"], vol["name"])
                     for i, path in enumerate(config_maps_paths):
                         if os.getenv("SHARED_FS") != "true":
                             dirs = path.split(":")
@@ -103,7 +103,7 @@ def prepare_mounts(container, pod):
                         mount_data.append(path)
                 elif pod_volume_spec and "Secret" in pod_volume_spec.keys():
                     secrets_paths = mountSecrets(container, pod, pod_volume_spec["Secret"])
-                    print("bind as secret", mount_var["Name"], vol["Name"])
+                    print("bind as secret", mount_var["name"], vol["name"])
                     for i, path in enumerate(secrets_paths):
                         if os.getenv("SHARED_FS") != "true":
                             dirs = path.split(":")
@@ -133,7 +133,7 @@ def prepare_mounts(container, pod):
 def mountConfigMaps(container, pod, cfgMap):
     configMapNamePaths = []
     wd = os.getcwd()
-    if InterLinkConfigInst["ExportPodData"] and "VolumeMounts" in container.keys():
+    if InterLinkConfigInst["ExportPodData"] and "volumeMounts" in container.keys():
         data_root_folder = InterLinkConfigInst["DataRootFolder"]
         #remove the directory where the ConfigMaps will be mounted
         cmd = ["-rf", os.path.join(wd, data_root_folder, "configMaps")]
@@ -143,14 +143,14 @@ def mountConfigMaps(container, pod, cfgMap):
         if err:
             logging.error("Unable to delete root folder")
 
-        for mountSpec in container["VolumeMounts"]:
+        for mountSpec in container["volumeMounts"]:
             podVolumeSpec = None
-            for vol in pod["Spec"]["Volumes"]:
-                if vol["Name"] == mountSpec["Name"]:
-                    podVolumeSpec = vol["VolumeSource"]
+            for vol in pod["spec"]["volumes"]:
+                if vol["name"] == mountSpec["name"]:
+                    podVolumeSpec = vol["volumeSource"]
                 if podVolumeSpec and "ConfigMap" in podVolumeSpec.keys():
-                    #podConfigMapDir = os.path.join(wd, data_root_folder, f"{pod['ObjectMeta']['Namespace']}-{pod['ObjectMeta']['uid']}/configMaps/", vol["Name"])
-                    podConfigMapDir = os.path.join(wd, data_root_folder, f"{pod['ObjectMeta']['Namespace']}/configMaps/", vol["Name"])
+                    #podConfigMapDir = os.path.join(wd, data_root_folder, f"{pod['metadata']['Namespace']}-{pod['metadata']['uid']}/configMaps/", vol["name"])
+                    podConfigMapDir = os.path.join(wd, data_root_folder, f"{pod['metadata']['Namespace']}/configMaps/", vol["name"])
                     if cfgMap["Data"]:
                         for key in cfgMap["Data"]:
                             path = os.path.join(wd, podConfigMapDir, key)
@@ -188,21 +188,21 @@ def mountSecrets(container, pod, secret):
     secret_name_paths = []
     wd = os.getcwd()
 
-    if InterLinkConfigInst["ExportPodData"] and "VolumeMounts" in container.keys():
+    if InterLinkConfigInst["ExportPodData"] and "volumeMounts" in container.keys():
         data_root_folder = InterLinkConfigInst["DataRootFolder"]
         # Remove the directory where the secrets will be mounted
         cmd = ["-rf", os.path.join(wd, data_root_folder, "secrets")]
         subprocess.run(["rm"] + cmd, check=True)
 
-        for mount_spec in container["VolumeMounts"]:
+        for mount_spec in container["volumeMounts"]:
             pod_volume_spec = None
-            for vol in pod["Spec"]["Volumes"]:
-                if vol["Name"] == mount_spec["Name"]:
-                    pod_volume_spec = vol["VolumeSource"]
+            for vol in pod["spec"]["volumes"]:
+                if vol["name"] == mount_spec["name"]:
+                    pod_volume_spec = vol["volumeSource"]
                     break
             if pod_volume_spec and "Secret" in pod_volume_spec.keys():
                 #pod_secret_dir = os.path.join(wd, data_root_folder, f"{pod.metadata.namespace}-{pod.metadata.uid}/secrets/", vol["name"])
-                pod_secret_dir = os.path.join(wd, data_root_folder, f"{pod['ObjectMeta']['Namespace']}", vol["Name"])
+                pod_secret_dir = os.path.join(wd, data_root_folder, f"{pod['metadata']['Namespace']}", vol["name"])
 
                 if secret["Data"]:
                     for key in secret["Data"]:
@@ -234,14 +234,14 @@ def mountSecrets(container, pod, secret):
 
 def mount_empty_dir(container, pod):
     ed_path = None
-    if InterLinkConfigInst['ExportPodData'] and "VolumeMounts" in container.keys():
+    if InterLinkConfigInst['ExportPodData'] and "volumeMounts" in container.keys():
         cmd = ["-rf", os.path.join(InterLinkConfigInst['DataRootFolder'], "emptyDirs")]
         subprocess.run(["rm"] + cmd, check=True)
-        for mount_spec in container["VolumeMounts"]:
+        for mount_spec in container["volumeMounts"]:
             pod_volume_spec = None
-            for vol in pod["Spec"]["Volumes"]:
-                if vol.name == mount_spec["Name"]:
-                    pod_volume_spec = vol["VolumeSource"]
+            for vol in pod["spec"]["volumes"]:
+                if vol.name == mount_spec["name"]:
+                    pod_volume_spec = vol["volumeSource"]
                     break
             if pod_volume_spec and pod_volume_spec["EmptyDir"]:
                 ed_path = os.path.join(InterLinkConfigInst['DataRootFolder'],
@@ -253,7 +253,7 @@ def mount_empty_dir(container, pod):
     return ed_path
 
 def produce_htcondor_singularity_script(container, metadata, command):
-    executable_path = f"./{container['Name']}.sh"
+    executable_path = f"./{container['name']}.sh"
     if True:
         with open(executable_path, "w") as f:
             #prefix += f"\n{InterLinkConfigInst['CommandPrefix']}"
@@ -270,9 +270,9 @@ pwd; hostname;
 
         job = {
             "executable": "{}".format(executable_path),  # the program to run on the execute node
-            "output": "{}{}.out".format(InterLinkConfigInst['DataRootFolder'], container['Name']) ,      # anything the job prints to standard output will end up in this file
-            "error": "{}{}.err".format(InterLinkConfigInst['DataRootFolder'], container['Name']) ,         # anything the job prints to standard error will end up in this file
-            "log": "{}{}.log".format(InterLinkConfigInst['DataRootFolder'], container['Name'])   ,          # this file will contain a record of what happened to the job
+            "output": "{}{}.out".format(InterLinkConfigInst['DataRootFolder'], container['name']) ,      # anything the job prints to standard output will end up in this file
+            "error": "{}{}.err".format(InterLinkConfigInst['DataRootFolder'], container['name']) ,         # anything the job prints to standard error will end up in this file
+            "log": "{}{}.log".format(InterLinkConfigInst['DataRootFolder'], container['name'])   ,          # this file will contain a record of what happened to the job
             "request_cpus": "1",            # how many CPU cores we want
             "request_memory": "128MB",      # how much memory we want
             "request_disk": "128MB",        # how much disk space we want
@@ -293,7 +293,7 @@ pwd; hostname;
 
 
 def produce_htcondor_host_script(container, metadata, t2):
-    executable_path = f"./{container['Name']}.sh"
+    executable_path = f"./{container['name']}.sh"
     if True:
         with open(executable_path, "w") as f:
             #prefix += f"\n{InterLinkConfigInst['CommandPrefix']}"
@@ -329,9 +329,9 @@ cat var/log/condor/StartLog
         job = {
             "executable": "{}".format(executable_path),  # the program to run on the execute node
             "arguments": "{}".format(t2),  # the program to run on the execute node
-            "output": "{}{}.out".format(InterLinkConfigInst['DataRootFolder'], container['Name']) ,      # anything the job prints to standard output will end up in this file
-            "error": "{}{}.err".format(InterLinkConfigInst['DataRootFolder'], container['Name']) ,         # anything the job prints to standard error will end up in this file
-            "log": "{}{}.log".format(InterLinkConfigInst['DataRootFolder'], container['Name'])   ,          # this file will contain a record of what happened to the job
+            "output": "{}{}.out".format(InterLinkConfigInst['DataRootFolder'], container['name']) ,      # anything the job prints to standard output will end up in this file
+            "error": "{}{}.err".format(InterLinkConfigInst['DataRootFolder'], container['name']) ,         # anything the job prints to standard error will end up in this file
+            "log": "{}{}.log".format(InterLinkConfigInst['DataRootFolder'], container['name'])   ,          # this file will contain a record of what happened to the job
             "request_cpus": "1",            # how many CPU cores we want
             #"request_cpus": "8",            # how many CPU cores we want
             "request_memory": "128MB",      # how much memory we want
@@ -361,25 +361,26 @@ def htcondor_batch_submit(job):
     return submit_result
 
 def delete_container(container):
-    logging.info(f"Deleting container {container['Name']}")
-    with open(f"{InterLinkConfigInst['DataRootFolder']}{container['Name']}.jid") as f:
+    logging.info(f"Deleting container {container['name']}")
+    with open(f"{InterLinkConfigInst['DataRootFolder']}{container['name']}.jid") as f:
         data = f.read()
     jid = int(data.strip())
     schedd.act(htcondor.JobAction.Remove, f"ClusterId == {jid}")
 
-    #os.remove(f"{InterLinkConfigInst['DataRootFolder']}{container['Name']}.out")
-    #os.remove(f"{InterLinkConfigInst['DataRootFolder']}{container['Name']}.err")
-    os.remove(f"{InterLinkConfigInst['DataRootFolder']}{container['Name']}.jid")
-    #os.remove(f"{InterLinkConfigInst['DataRootFolder']}{container['Name']}")
+    #os.remove(f"{InterLinkConfigInst['DataRootFolder']}{container['name']}.out")
+    #os.remove(f"{InterLinkConfigInst['DataRootFolder']}{container['name']}.err")
+    os.remove(f"{InterLinkConfigInst['DataRootFolder']}{container['name']}.jid")
+    #os.remove(f"{InterLinkConfigInst['DataRootFolder']}{container['name']}")
 
 def handle_jid(container, jid, pod):
-    if True:
-        with open(f"{InterLinkConfigInst['DataRootFolder']}{container['Name']}.jid", "w") as f:
+    try:
+        with open(f"{InterLinkConfigInst['DataRootFolder']}{container['name']}.jid", "w") as f:
             f.write(str(jid))
-        JID.append({"JID": jid, "Pod": pod})
-        logging.info(f"Job {jid} submitted successfully", f"{InterLinkConfigInst['DataRootFolder']}{container['Name']}.jid")
-    else:
+        JID.append({"JID": jid, "pod": pod})
+        logging.info(f"Job {jid} submitted successfully", f"{InterLinkConfigInst['DataRootFolder']}{container['name']}.jid")
+    except:
         logging.info("Job submission failed, couldn't retrieve JID")
+        return "Job submission failed, couldn't retrieve JID", 500
 
 #def SubmitHandler(w, r):
 def SubmitHandler():
@@ -390,10 +391,15 @@ def SubmitHandler():
     #except json.JSONDecodeError as e:
     #    logging.error("Error decoding JSON:", e)
     #    return
-    req = request.get_json()
+    #print("Received Request Data:", request.data)
+    request_data_string = request.data.decode("utf-8")#.replace("false", "False").replace("true", "True").replace("null", "None")
+    #req = request.get_json()
+    #print("Decoded", request_data_string)
+    req = json.loads(request_data_string)[0]
     if req is None or not isinstance(req, dict):
-        logging.error("Invalid request data")
-        return "Invalid request data", 400
+        logging.error("Invalid request data for submitting")
+        print("REQUEST BODY ISSSSS: ", req)
+        return "Invalid request data for submitting", 400
     #if os.getenv("KUBECONFIG") == "":
     #    time.sleep(1)
     #try:
@@ -403,54 +409,61 @@ def SubmitHandler():
     #except Exception as e:
     #    logging.error("Unable to create a valid config:", e)
     #    #return
-    for pod_ in req.get("Pods", []):
-        pod = pod_.get("Pod", {})
-        metadata = pod.get("ObjectMeta", {})
-        containers = pod.get("Spec", {}).get("Containers", [])
-        for container in containers:
-            logging.info(f"Beginning script generation for container {container['Name']}")
+    #for pod_ in req.get("Pods", []):
+    pod = req.get("pod", {})
+    metadata = pod.get("metadata", {})
+    containers = pod.get("spec", {}).get("containers", [])
+    for container in containers:
+        #print(container)
+        logging.info(f"Beginning script generation for container {container['name']}")
 
-            if not "host" in container["Image"]:
-                commstr1 = ["singularity", "exec"]
+        if not "host" in container["image"]:
+            commstr1 = ["singularity", "exec"]
 
-                envs = prepare_envs(container)
-                image = ""
-                mounts = prepare_mounts(container, pod)
-                if container["Image"].startswith("/"):
-                    image_uri = metadata.get("Annotations", {}).get("htcondor-job.knoc.io/image-root", None)
-                    if image_uri:
-                        logging.info(image_uri)
-                        image = image_uri + container["Image"]
-                    else:
-                        logging.warning("image-uri annotation not specified for path in remote filesystem")
+            envs = prepare_envs(container)
+            image = ""
+            mounts = prepare_mounts(container, pod)
+            if container["image"].startswith("/"):
+                image_uri = metadata.get("Annotations", {}).get("htcondor-job.knoc.io/image-root", None)
+                if image_uri:
+                    logging.info(image_uri)
+                    image = image_uri + container["image"]
                 else:
-                    image = "docker://" + container["Image"]
-                image = container["Image"]
-
-                logging.info("Appending all commands together...")
-                singularity_command = commstr1 + envs + mounts + [image] + container["Command"] + container["Args"]
-                print("singularity_command:", singularity_command)
-                path = produce_htcondor_singularity_script(container, metadata, singularity_command)
-
+                    logging.warning("image-uri annotation not specified for path in remote filesystem")
             else:
-                sitename = container["Image"].split(":")[-1]
-                print(sitename)
-                path = produce_htcondor_host_script(container, metadata, sitename)
+                image = "docker://" + container["image"]
+            image = container["image"]
 
-            out = htcondor_batch_submit(path)
-            #print(out)
-            handle_jid(container, out.cluster(), pod)
-            #JID.append(out.cluster(), pod)
-            logging.info(out)
-
-            #try:
-            if True:
-                with open(InterLinkConfigInst['DataRootFolder'] + container['Name'] + ".jid", "r") as f:
-                    jid = f.read()
-                #JID.append({"JID": jid, "Pod": pod})
-                #except FileNotFoundError:
+            logging.info("Appending all commands together...")
+            if "command" in container.keys() and "args" in container.keys():
+                singularity_command = commstr1 + envs + mounts + [image] + container["command"] + container["args"]
+            elif "command" in container.keys():
+                singularity_command = commstr1 + envs + mounts + [image] + container["command"]
             else:
-                logging.error("Unable to read JID from file")
+                singularity_command = commstr1 + envs + mounts + [image]
+
+            print("singularity_command:", singularity_command)
+            path = produce_htcondor_singularity_script(container, metadata, singularity_command)
+
+        else:
+            sitename = container["image"].split(":")[-1]
+            print(sitename)
+            path = produce_htcondor_host_script(container, metadata, sitename)
+
+        out = htcondor_batch_submit(path)
+        #print(out)
+        handle_jid(container, out.cluster(), pod)
+        #JID.append(out.cluster(), pod)
+        logging.info(out)
+
+        #try:
+        if True:
+            with open(InterLinkConfigInst['DataRootFolder'] + container['name'] + ".jid", "r") as f:
+                jid = f.read()
+            #JID.append({"JID": jid, "Pod": pod})
+            #except FileNotFoundError:
+        else:
+            logging.error("Unable to read JID from file")
     return "Job submitted successfully", 200
 
 #def StopHandler(w, r):
@@ -462,15 +475,20 @@ def StopHandler():
     #except json.JSONDecodeError as e:
     #    logging.error("Error decoding JSON:", e)
     #    return
-    req = request.get_json()
+    request_data_string = request.data.decode("utf-8")#.replace("false", "False").replace("true", "True").replace("null", "None")
+    #req = request.get_json()
+    #print("Decoded", request_data_string)
+    req = json.loads(request_data_string)[0]
+    #req = request.get_json()
     if req is None or not isinstance(req, dict):
         logging.error("Invalid request data")
-        return "Invalid request data", 400
+        return "Invalid request data for stopping", 400
 
-    for pod in req.get("Pods", []):
-        containers = pod.get("Spec", {}).get("Containers", [])
-        for container in containers:
-            delete_container(container)
+    #for pod in req.get("Pods", []):
+    pod = req.get("pod", {})
+    containers = pod.get("spec", {}).get("containers", [])
+    for container in containers:
+        delete_container(container)
     return "Requested pods successfully deleted", 200
 
 #def StatusHandler(w, r):
@@ -482,33 +500,46 @@ def StatusHandler():
     #except json.JSONDecodeError as e:
     #    logging.error("Error decoding JSON:", e)
     #    return
-
-    req = request.get_json()
+    #print("JID:", JID)
+    request_data_string = request.data.decode("utf-8")#.replace("false", "False").replace("true", "True").replace("null", "None")
+    #req = request.get_json()
+    #print("Decoded", request_data_string)
+    req = json.loads(request_data_string)[0]
+    #req = request.get_json()
     if req is None or not isinstance(req, dict):
         logging.error("Invalid request data")
-        return "Invalid request data", 400
+        return "Invalid request data for getting status", 400
 
     resp = {"PodName": [], "PodStatus": [], "ReturnVal": "Status"}
-    for pod in req.get("Pods", []):
-        print("aaaaa")
+    #for pod in req.get("Pods", []):
+    #pod = req.get("pod", {})
         #if True:
-        print(JID[0]['Pod']['ObjectMeta']['Name'])
-        print(pod['ObjectMeta']['Name'])
-        pod_JID = list(filter(lambda jid: jid['Pod']['ObjectMeta']['Name'] == pod['ObjectMeta']['Name'], JID))
-        ok = True
-        print(pod_JID)
+    #print(JID[0]['pod']['metadata']['name'])
+    #print("poddddddddddddddddddddddddddddddddddddddd", pod)
+    #pod_JID = list(filter(lambda jid: jid['pod']['metadata']['name'] == pod['metadata']['name'], JID))
+    ok = True
+    #print(pod_JID)
+
+    podnames_list = []
+    for jid in JID:
+        podnames_list.append(jid['pod']['metadata']['name'])
+    podnames = set(podnames_list)
+
+    for podname in podnames:
+        pod_JID = list(filter(lambda jid: jid['pod']['metadata']['name'] == podname, JID))
+        print(type(podname), podname)
+        resp["PodName"].append({"Name": podname})
         for jid in pod_JID:
-            #resp["PodName"].append({'Name': pod.get('Name', "")})
-            resp["PodName"].append(jid['Pod']['ObjectMeta']['Name'])
+            #resp["PodName"].append({'name': pod.get('name', "")})
             query_result = schedd.query(constraint=f"ClusterId == {jid['JID']}", projection=["ClusterId", "ProcId", "Out", "JobStatus"],)
-            print(query_result)
+            #print(query_result)
             if query_result[0]['JobStatus'] != 2:
                 ok = False
-                continue
+                break
         if ok == True:
-            resp["PodStatus"].append({"PodStatus": "RUNNING"})
+            resp["PodStatus"].append({"PodStatus": 0})
         else:
-            resp["PodStatus"].append({"PodStatus": "STOP"})
+            resp["PodStatus"].append({"PodStatus": 1})
     #w.write(json.dumps(resp))
     return json.dumps(resp), 200
 
@@ -519,7 +550,7 @@ from flask import Flask, request
 app = Flask(__name__)
 app.add_url_rule('/submit', view_func=SubmitHandler, methods=['POST'])
 app.add_url_rule('/stop', view_func=StopHandler, methods=['POST'])
-app.add_url_rule('/status', view_func=StatusHandler, methods=['POST'])
+app.add_url_rule('/status', view_func=StatusHandler, methods=['GET'])
 
 if __name__ == '__main__':
     app.run(port=8000, debug=True)
