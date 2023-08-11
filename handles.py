@@ -15,6 +15,7 @@ parser.add_argument("--scitokens-file", help="Scitokens file", type=str, default
 parser.add_argument("--cafile", help="CA file", type=str, default = "")
 parser.add_argument("--auth-method", help="Default authentication methods", type=str, default = "")
 parser.add_argument("--debug", help="Debug level", type=str, default = "")
+parser.add_argument("--dummy-job", action = 'store_true', help="Whether the job should be a real job or a dummy sleep job for debugging purposes")
 
 args = parser.parse_args()
 
@@ -32,6 +33,7 @@ if args.auth_method != "":
     os.environ['_condor_SEC_DEFAULT_AUTHENTICATION_METHODS'] = args.auth_method
 if args.debug != "":
     os.environ['_condor_TOOL_DEBUG'] = args.debug
+dummy_job = args.dummy_job
 
 
 global JID
@@ -51,7 +53,7 @@ def read_yaml_file(file_path):
 global InterLinkConfigInst
 interlink_config_path = "../interLink/kustomizations/InterLinkConfig.yaml"
 InterLinkConfigInst = read_yaml_file(interlink_config_path)
-print(InterLinkConfigInst)
+print("Interlink configuration info:", InterLinkConfigInst)
 
 
 import htcondor
@@ -237,23 +239,28 @@ def mount_empty_dir(container, pod):
 
 def produce_htcondor_singularity_script(containers, metadata, commands):
     executable_path = f"./{metadata['name']}.sh"
-    if True:
+    try:
         with open(executable_path, "w") as f:
             #prefix += f"\n{InterLinkConfigInst['CommandPrefix']}"
-            prefix_ = f"\n{InterLinkConfigInst['CommandPrefix']}"
-            batch_macros = f"""#!/bin/bash
-sleep 100000000
+            if dummy_job == False:
+                prefix_ = f"\n{InterLinkConfigInst['CommandPrefix']}"
+                batch_macros = f"""#!/bin/bash
 . ~/.bash_profile
 export SINGULARITYENV_SINGULARITY_TMPDIR=$CINECA_SCRATCH
 export SINGULARITYENV_SINGULARITY_CACHEDIR=$CINECA_SCRATCH
 pwd; hostname;
 """
-            # date{prefix_};
-            #f.write(batch_macros + "\n" + " ".join(command))
-            commands_joined = []
-            for i in range(0,len(commands)):
-                commands_joined.append(" ".join(commands[i]))
-            f.write(batch_macros + "\n" + "\n".join(commands_joined))
+                # date{prefix_};
+                #f.write(batch_macros + "\n" + " ".join(command))
+                commands_joined = []
+                for i in range(0,len(commands)):
+                    commands_joined.append(" ".join(commands[i]))
+                f.write(batch_macros + "\n" + "\n".join(commands_joined))
+            else:
+                batch_macros = f"""#!/bin/bash
+sleep 100000000
+"""
+                f.write(batch_macros)
 
         job = {
             "executable": "{}".format(executable_path),  # the program to run on the execute node
@@ -266,20 +273,20 @@ pwd; hostname;
             }
 
         os.chmod(executable_path, 0o0777)
-    else:
-        print(InterLinkConfigInst)
+    except Exception as e:
+        logging.error(f"Unable to prepare the job: {e}")
 
     return htcondor.Submit(job)
 
 
 def produce_htcondor_host_script(container, metadata, t2):
     executable_path = f"./{container['name']}.sh"
-    if True:
+    try:
         with open(executable_path, "w") as f:
             #prefix += f"\n{InterLinkConfigInst['CommandPrefix']}"
-            prefix_ = f"\n{InterLinkConfigInst['CommandPrefix']}"
-            batch_macros = f"""#!/bin/bash
-sleep 100000000
+            if dummy_job == False:
+                prefix_ = f"\n{InterLinkConfigInst['CommandPrefix']}"
+                batch_macros = f"""#!/bin/bash
 echo "SiteName =" $1
 
 SiteName=$1
@@ -303,9 +310,13 @@ echo "========"
 echo "esco "
 cat var/log/condor/StartLog
 """
-            # date{prefix_};
-            f.write(batch_macros)
+                # date{prefix_};
 
+            else:
+                batch_macros = f"""#!/bin/bash
+sleep 100000000
+"""
+            f.write(batch_macros)
         job = {
             "executable": "{}".format(executable_path),  # the program to run on the execute node
             "arguments": "{}".format(t2),  # the program to run on the execute node
@@ -324,6 +335,8 @@ cat var/log/condor/StartLog
             }
 
         os.chmod(executable_path, 0o0777)
+    except Exception as e:
+        logging.error(f"Unable to prepare the job: {e}")
 
     return htcondor.Submit(job)
 
@@ -352,15 +365,15 @@ def delete_pod(pod):
     os.remove(f"{InterLinkConfigInst['DataRootFolder']}{pod['metadata']['name']}.jid")
     #os.remove(f"{InterLinkConfigInst['DataRootFolder']}{pod['metadata']['name']}")
 
-def handle_jid(container, jid, pod):
+def handle_jid(jid, pod):
     try:
         with open(f"{InterLinkConfigInst['DataRootFolder']}{pod['metadata']['name']}.jid", "w") as f:
             f.write(str(jid))
         JID.append({"JID": jid, "pod": pod})
-        logging.info(f"Job {jid} submitted successfully", f"{InterLinkConfigInst['DataRootFolder']}{container['name']}.jid")
+        logging.info(f"Job {jid} submitted successfully", f"{InterLinkConfigInst['DataRootFolder']}{pod['metadata']['name']}.jid")
     except:
         logging.info("Job submission failed, couldn't retrieve JID")
-        return "Job submission failed, couldn't retrieve JID", 500
+        #return "Job submission failed, couldn't retrieve JID", 500
 
 def SubmitHandler():
     ##### READ THE REQUEST ###############
@@ -417,23 +430,23 @@ def SubmitHandler():
     ### WLCG T2 HTCONDOR CASE
     else:
         print("host keyword detected in the first container, ignoring other containers")
-        sitename = container["image"].split(":")[-1]
+        sitename = containers[0]["image"].split(":")[-1]
         print(sitename)
-        path = produce_htcondor_host_script(container, metadata, sitename)
+        path = produce_htcondor_host_script(containers[0], metadata, sitename)
 
     out = htcondor_batch_submit(path)
-    handle_jid(container, out.cluster(), pod)
+    handle_jid(out.cluster(), pod)
     logging.info(out)
 
-    #try:
-    if True:
+    try:
         with open(InterLinkConfigInst['DataRootFolder'] + pod['metadata']['name'] + ".jid", "r") as f:
             jid = f.read()
         #JID.append({"JID": jid, "Pod": pod})
         #except FileNotFoundError:
-    else:
+        return "Job submitted successfully", 200
+    except:
         logging.error("Unable to read JID from file")
-    return "Job submitted successfully", 200
+        return "Something went wrong in job submission", 500
 
 def StopHandler():
     ##### READ THE REQUEST ######
@@ -444,13 +457,13 @@ def StopHandler():
         logging.error("Invalid request data")
         return "Invalid request data for stopping", 400
 
-    #### DELETE JOBS RELATED TO REQUEST
+    #### DELETE JOB RELATED TO REQUEST
     pod = req.get("pod", {})
-    delete_pod(pod)
-    #containers = pod.get("spec", {}).get("containers", [])
-    #for container in containers:
-    #    delete_container(container)
-    return "Requested pod successfully deleted", 200
+    try:
+        delete_pod(pod)
+        return "Requested pod successfully deleted", 200
+    except:
+        return "Something went wrong when deleting the requested pod", 500
 
 def StatusHandler():
     ####### READ THE REQUEST #####################
@@ -463,23 +476,25 @@ def StatusHandler():
 
     ####### ELABORATE RESPONSE #################
     resp = {"PodName": [], "PodStatus": [], "ReturnVal": "Status"}
-    for jid in JID:
-        podname = jid['pod']['metadata']['name']
-        print(type(podname), podname)
-        resp["PodName"].append({"Name": podname})
-        ok = True
-        query_result = schedd.query(constraint=f"ClusterId == {jid['JID']}", projection=["ClusterId", "ProcId", "Out", "JobStatus"],)
-        if len(query_result) == 0:
-            ok = False
-        elif query_result[0]['JobStatus'] != 2:
-            ok = False
-        if ok == True:
-            resp["PodStatus"].append({"PodStatus": 0})
-        else:
-            resp["PodStatus"].append({"PodStatus": 1})
-    return json.dumps(resp), 200
+    try:
+        for jid in JID:
+            podname = jid['pod']['metadata']['name']
+            print(type(podname), podname)
+            resp["PodName"].append({"Name": podname})
+            ok = True
+            query_result = schedd.query(constraint=f"ClusterId == {jid['JID']}", projection=["ClusterId", "ProcId", "Out", "JobStatus"],)
+            if len(query_result) == 0:
+                ok = False
+            elif query_result[0]['JobStatus'] != 2:
+                ok = False
+            if ok == True:
+                resp["PodStatus"].append({"PodStatus": 0})
+            else:
+                resp["PodStatus"].append({"PodStatus": 1})
+        return json.dumps(resp), 200
 
-
+    except:
+        return "Something went wrong when retrieving pod status", 500
 # The above functions can be used as handlers for appropriate endpoints in your web server.
 from flask import Flask, request
 
