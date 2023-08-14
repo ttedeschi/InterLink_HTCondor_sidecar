@@ -11,10 +11,14 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--schedd-name", help="Schedd name", type=str, default = "")
 parser.add_argument("--schedd-host", help="Schedd host", type=str, default = "")
 parser.add_argument("--collector-host", help="Collector-host", type=str, default = "")
-parser.add_argument("--scitokens-file", help="Scitokens file", type=str, default = "")
-parser.add_argument("--cafile", help="CA file", type=str, default = "")
+#parser.add_argument("--scitokens-file", help="Scitokens file", type=str, default = "")
+parser.add_argument("--cadir", help="CA directory", type=str, default = "")
+parser.add_argument("--certfile", help="cert file", type=str, default = "")
+parser.add_argument("--keyfile", help="key file", type=str, default = "")
 parser.add_argument("--auth-method", help="Default authentication methods", type=str, default = "")
 parser.add_argument("--debug", help="Debug level", type=str, default = "")
+parser.add_argument("--condor-config", help="Path to condor_config file", type=str, default = "")
+parser.add_argument("--proxy", help="Path to proxy file", type=str, default = "")
 parser.add_argument("--dummy-job", action = 'store_true', help="Whether the job should be a real job or a dummy sleep job for debugging purposes")
 
 args = parser.parse_args()
@@ -25,14 +29,24 @@ if args.schedd_host != "":
     os.environ['_condor_SCHEDD_HOST'] = args.schedd_host
 if args.collector_host != "":
     os.environ['_condor_COLLECTOR_HOST'] = args.collector_host
-if args.scitokens_file != "":
-    os.environ['_condor_SCITOKENS_FILE'] = args.scitokens_file
-if args.cafile != "":
-    os.environ['_condor_AUTH_SSL_CLIENT_CAFILE'] = args.cafile
+#if args.scitokens_file != "":
+#    os.environ['_condor_SCITOKENS_FILE'] = args.scitokens_file
+if args.cadir != "":
+    os.environ['_condor_AUTH_SSL_CLIENT_CADIR'] = args.cadir
+if args.certfile != "":
+    os.environ['_condor_AUTH_SSL_CLIENT_CERTFILE'] = args.certfile
+if args.keyfile != "":
+    os.environ['_condor_AUTH_SSL_CLIENT_KEYFILE'] = args.keyfile
 if args.auth_method != "":
     os.environ['_condor_SEC_DEFAULT_AUTHENTICATION_METHODS'] = args.auth_method
 if args.debug != "":
     os.environ['_condor_TOOL_DEBUG'] = args.debug
+if args.condor_config != "":
+    os.environ['CONDOR_CONFIG'] = args.condor_config
+if args.proxy != "":
+    os.environ['X509_USER_PROXY'] = args.proxy
+if args.proxy != "":
+    os.environ['X509_USER_CERT'] = args.proxy
 dummy_job = args.dummy_job
 
 
@@ -51,7 +65,8 @@ def read_yaml_file(file_path):
             print("Error reading YAML file:", e)
             return None
 global InterLinkConfigInst
-interlink_config_path = "../interLink/kustomizations/InterLinkConfig.yaml"
+interlink_config_path = "/utils/InterLinkConfig.yaml"
+#interlink_config_path = "./InterLinkConfig.yaml"
 InterLinkConfigInst = read_yaml_file(interlink_config_path)
 print("Interlink configuration info:", InterLinkConfigInst)
 
@@ -504,4 +519,4 @@ app.add_url_rule('/stop', view_func=StopHandler, methods=['POST'])
 app.add_url_rule('/status', view_func=StatusHandler, methods=['GET'])
 
 if __name__ == '__main__':
-    app.run(port=8000, debug=True)
+    app.run(port=8000, host="0.0.0.0", debug=True)
