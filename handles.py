@@ -254,7 +254,8 @@ def mount_empty_dir(container, pod):
 
 def produce_htcondor_singularity_script(containers, metadata, commands):
     executable_path = f"./{metadata['name']}.sh"
-    try:
+    #try:
+    if True:
         with open(executable_path, "w") as f:
             #prefix += f"\n{InterLinkConfigInst['CommandPrefix']}"
             if dummy_job == False:
@@ -288,15 +289,17 @@ sleep 100000000
             }
 
         os.chmod(executable_path, 0o0777)
-    except Exception as e:
+    #except Exception as e:
+    else:
         logging.error(f"Unable to prepare the job: {e}")
 
     return htcondor.Submit(job)
 
 
 def produce_htcondor_host_script(container, metadata, t2):
-    executable_path = f"./{container['name']}.sh"
-    try:
+    executable_path = f"./{InterLinkConfigInst['DataRootFolder']}/{container['name']}.sh"
+    sub_path = f"./{InterLinkConfigInst['DataRootFolder']}/{container['name']}.jdl"
+    if True:
         with open(executable_path, "w") as f:
             #prefix += f"\n{InterLinkConfigInst['CommandPrefix']}"
             if dummy_job == False:
@@ -333,11 +336,13 @@ sleep 100000000
 """
             f.write(batch_macros)
         job = {
+            #"InitialDir": ".",
             "executable": "{}".format(executable_path),  # the program to run on the execute node
             "arguments": "{}".format(t2),  # the program to run on the execute node
             "output": "{}{}.out".format(InterLinkConfigInst['DataRootFolder'], container['name']) ,      # anything the job prints to standard output will end up in this file
             "error": "{}{}.err".format(InterLinkConfigInst['DataRootFolder'], container['name']) ,         # anything the job prints to standard error will end up in this file
             "log": "{}{}.log".format(InterLinkConfigInst['DataRootFolder'], container['name'])   ,          # this file will contain a record of what happened to the job
+            "should_transfer_files": "YES",
             "request_cpus": "1",            # how many CPU cores we want
             #"request_cpus": "8",            # how many CPU cores we want
             "request_memory": "128MB",      # how much memory we want
@@ -348,17 +353,51 @@ sleep 100000000
             "+WMAgent_AgentName": "whatever",
             #"Queue": "1"
             }
+        job = f"""
+Executable = {executable_path}
 
+Arguments  = {t2}
+
+Log        = log/mm_mul.$(Cluster).$(Process).log
+Output     = out/mm_mul.out.$(Cluster).$(Process)
+Error      = err/mm_mul.err.$(Cluster).$(Process)
+
+should_transfer_files = YES
+RequestCpus = 8
+RequestMemory = 16000
+
+when_to_transfer_output = ON_EXIT
++MaxWallTimeMins = 60
+
++WMAgent_AgentName = "whatever"
+
+Queue 1
+"""
+        print(job)
+        with open(sub_path, "w") as f_:
+            f_.write(job)
         os.chmod(executable_path, 0o0777)
-    except Exception as e:
+    #except Exception as e:
+    else:
         logging.error(f"Unable to prepare the job: {e}")
 
-    return htcondor.Submit(job)
+    #return htcondor.Submit(job)
+    import time
+
+    #time.sleep(5)
+    return sub_path
 
 def htcondor_batch_submit(job):
     logging.info("Submitting HTCondor job")
-    submit_result = schedd.submit(job, )#spool = True, )
-    return submit_result
+    #submit_result = schedd.submit(job)#, spool = True, )
+    #spool_result = schedd.spool(submit_result.clusterad())
+    #return submit_result
+    process = os.popen(f"condor_submit -pool {args.collector_host} -remote {args.schedd_name} {job}")
+    preprocessed = process.read()
+    process.close()
+    jid = preprocessed.split(" ")[-1].split(".")[0]
+
+    return jid
 
 def delete_container(container):
     logging.info(f"Deleting container {container['name']}")
@@ -377,16 +416,17 @@ def delete_pod(pod):
 
     #os.remove(f"{InterLinkConfigInst['DataRootFolder']}{pod['metadata']['name']}.out")
     #os.remove(f"{InterLinkConfigInst['DataRootFolder']}{pod['metadata']['name']}.err")
-    os.remove(f"{InterLinkConfigInst['DataRootFolder']}{pod['metadata']['name']}.jid")
+    #os.remove(f"{InterLinkConfigInst['DataRootFolder']}{pod['metadata']['name']}.jid")
     #os.remove(f"{InterLinkConfigInst['DataRootFolder']}{pod['metadata']['name']}")
 
 def handle_jid(jid, pod):
-    try:
+    if True:
+        #with open(f"{InterLinkConfigInst['DataRootFolder']}{pod['metadata']['name']}.jid", "w") as f:
         with open(f"{InterLinkConfigInst['DataRootFolder']}{pod['metadata']['name']}.jid", "w") as f:
             f.write(str(jid))
         JID.append({"JID": jid, "pod": pod})
         logging.info(f"Job {jid} submitted successfully", f"{InterLinkConfigInst['DataRootFolder']}{pod['metadata']['name']}.jid")
-    except:
+    else:
         logging.info("Job submission failed, couldn't retrieve JID")
         #return "Job submission failed, couldn't retrieve JID", 500
 
@@ -403,6 +443,7 @@ def SubmitHandler():
 
     ###### ELABORATE RESPONSE ###########
     pod = req.get("pod", {})
+    print(pod)
     containers_standalone = req.get("container", {})
     print("REQUESTED POD IS: ", pod['metadata']['name'])
     metadata = pod.get("metadata", {})
@@ -449,17 +490,18 @@ def SubmitHandler():
         print(sitename)
         path = produce_htcondor_host_script(containers[0], metadata, sitename)
 
-    out = htcondor_batch_submit(path)
-    handle_jid(out.cluster(), pod)
-    logging.info(out)
+    out_jid = htcondor_batch_submit(path)
+    print(out_jid)
+    handle_jid(out_jid, pod)
+    #logging.info(out)
 
-    try:
+    if True:
         with open(InterLinkConfigInst['DataRootFolder'] + pod['metadata']['name'] + ".jid", "r") as f:
             jid = f.read()
         #JID.append({"JID": jid, "Pod": pod})
         #except FileNotFoundError:
         return "Job submitted successfully", 200
-    except:
+    else:
         logging.error("Unable to read JID from file")
         return "Something went wrong in job submission", 500
 
@@ -491,7 +533,7 @@ def StatusHandler():
 
     ####### ELABORATE RESPONSE #################
     resp = {"PodName": [], "PodStatus": [], "ReturnVal": "Status"}
-    try:
+    if True:
         for jid in JID:
             podname = jid['pod']['metadata']['name']
             print(type(podname), podname)
@@ -508,7 +550,7 @@ def StatusHandler():
                 resp["PodStatus"].append({"PodStatus": 1})
         return json.dumps(resp), 200
 
-    except:
+    else:
         return "Something went wrong when retrieving pod status", 500
 # The above functions can be used as handlers for appropriate endpoints in your web server.
 from flask import Flask, request
