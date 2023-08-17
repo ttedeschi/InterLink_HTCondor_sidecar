@@ -539,11 +539,24 @@ def StatusHandler():
             print(type(podname), podname)
             resp["PodName"].append({"Name": podname})
             ok = True
-            query_result = schedd.query(constraint=f"ClusterId == {jid['JID']}", projection=["ClusterId", "ProcId", "Out", "JobStatus"],)
-            if len(query_result) == 0:
+            #query_result = schedd.query(constraint=f"ClusterId == {jid['JID']}", projection=["ClusterId", "ProcId", "Out", "JobStatus"],)
+            process = os.popen(f"condor_q {jid['JID']} --json")
+            preprocessed = process.read()
+            process.close()
+            print(preprocessed)
+            #try:
+            if True:
+                job_ = json.loads(preprocessed)
+                status = job_[0]["JobStatus"]
+                if status != 2:
+                    ok = False
+            #except:
+            else:
                 ok = False
-            elif query_result[0]['JobStatus'] != 2:
-                ok = False
+            #if len(query_result) == 0:
+            #    ok = False
+            #elif query_result[0]['JobStatus'] != 2:
+            #    ok = False
             if ok == True:
                 resp["PodStatus"].append({"PodStatus": 0})
             else:
