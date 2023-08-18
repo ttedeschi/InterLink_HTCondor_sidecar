@@ -20,6 +20,7 @@ parser.add_argument("--debug", help="Debug level", type=str, default = "")
 parser.add_argument("--condor-config", help="Path to condor_config file", type=str, default = "")
 parser.add_argument("--proxy", help="Path to proxy file", type=str, default = "")
 parser.add_argument("--dummy-job", action = 'store_true', help="Whether the job should be a real job or a dummy sleep job for debugging purposes")
+parser.add_argument("--port", help="Server port", type=int, default = 8000)
 
 args = parser.parse_args()
 
@@ -531,36 +532,52 @@ def StatusHandler():
         logging.error("Invalid request data")
         return "Invalid request data for getting status", 400
 
+
+    print("REQ IS", req)
     ####### ELABORATE RESPONSE #################
-    resp = {"PodName": [], "PodStatus": [], "ReturnVal": "Status"}
-    if True:
-        for jid in JID:
+    #resp = {"PodName": [], "PodStatus": [], "ReturnVal": "Status"}
+    #resp = {"PodName": [], "PodNamespace": [], "PodStatus": [], }
+    resp = [{"Name": [], "Namespace": [], "Status": [], }]
+    #resp = []
+    for jid in JID:
+        if jid['pod']['metadata']['name'] == req['metadata']['name']:
+            this_resp = {}
             podname = jid['pod']['metadata']['name']
+            podnamespace = jid['pod']['metadata']['namespace']
             print(type(podname), podname)
-            resp["PodName"].append({"Name": podname})
+            #resp["PodName"].append({"Name": podname})
+            #resp["PodNamespace"].append({"Namespace": podnamespace})
+            #this_resp["name"] = podname
+            #this_resp["namespace"] = podnamespace
+            resp[0]["Name"] = podname
+            resp[0]["Namespace"] = podnamespace
             ok = True
             #query_result = schedd.query(constraint=f"ClusterId == {jid['JID']}", projection=["ClusterId", "ProcId", "Out", "JobStatus"],)
             process = os.popen(f"condor_q {jid['JID']} --json")
             preprocessed = process.read()
             process.close()
             print(preprocessed)
-            #try:
-            if True:
+            try:
                 job_ = json.loads(preprocessed)
                 status = job_[0]["JobStatus"]
                 if status != 2:
                     ok = False
-            #except:
-            else:
+            except:
                 ok = False
+                logging.error("Something went wrong when retrieving job status")
             #if len(query_result) == 0:
             #    ok = False
             #elif query_result[0]['JobStatus'] != 2:
             #    ok = False
             if ok == True:
-                resp["PodStatus"].append({"PodStatus": 0})
+                #resp["PodStatus"].append({"PodStatus": 0})
+                resp[0]["Status"] = 0
+                #this_resp["status"] = 0
             else:
-                resp["PodStatus"].append({"PodStatus": 1})
+                #resp["PodStatus"].append({"PodStatus": 1})
+                #resp[0]["Status"] = 1
+                resp[0]["Status"] = 0   #####################FIX SLEEEP VK
+                #this_resp["status"] = 1
         return json.dumps(resp), 200
 
     else:
@@ -569,9 +586,10 @@ def StatusHandler():
 from flask import Flask, request
 
 app = Flask(__name__)
-app.add_url_rule('/submit', view_func=SubmitHandler, methods=['POST'])
+#app.add_url_rule('/submit', view_func=SubmitHandler, methods=['POST'])
+app.add_url_rule('/create', view_func=SubmitHandler, methods=['POST'])
 app.add_url_rule('/stop', view_func=StopHandler, methods=['POST'])
 app.add_url_rule('/status', view_func=StatusHandler, methods=['GET'])
 
 if __name__ == '__main__':
-    app.run(port=8000, host="0.0.0.0", debug=True)
+    app.run(port=args.port, host="0.0.0.0", debug=True)
