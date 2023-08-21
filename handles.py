@@ -318,7 +318,7 @@ echo " "
 echo "lancio il wn "  `date`
 ./setupwn.sh $SiteName
 
-sleep 14000
+sleep 30
 echo " ho aspettato 300 " `date`
 ps -auxf
 echo "========"
@@ -393,7 +393,9 @@ def htcondor_batch_submit(job):
     #submit_result = schedd.submit(job)#, spool = True, )
     #spool_result = schedd.spool(submit_result.clusterad())
     #return submit_result
-    process = os.popen(f"condor_submit -pool {args.collector_host} -remote {args.schedd_name} {job}")
+    #process = os.popen(f"condor_submit -pool {args.collector_host} -remote {args.schedd_name} {job}")
+    #process = os.popen(f"condor_submit -pool {args.collector_host} -remote {args.schedd_host} {job}")
+    process = os.popen(f"condor_submit -pool {args.collector_host} -remote {args.schedd_host} {job} -spool")
     preprocessed = process.read()
     process.close()
     jid = preprocessed.split(" ")[-1].split(".")[0]
@@ -560,7 +562,7 @@ def StatusHandler():
             try:
                 job_ = json.loads(preprocessed)
                 status = job_[0]["JobStatus"]
-                if status != 2:
+                if status != 2 and status !=1:
                     ok = False
             except:
                 ok = False
@@ -575,8 +577,8 @@ def StatusHandler():
                 #this_resp["status"] = 0
             else:
                 #resp["PodStatus"].append({"PodStatus": 1})
-                #resp[0]["Status"] = 1
-                resp[0]["Status"] = 0   #####################FIX SLEEEP VK
+                resp[0]["Status"] = 1
+                #resp[0]["Status"] = 0   #####################FIX SLEEEP VK
                 #this_resp["status"] = 1
         return json.dumps(resp), 200
 
