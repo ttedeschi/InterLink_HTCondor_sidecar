@@ -318,7 +318,7 @@ echo " "
 echo "lancio il wn "  `date`
 ./setupwn.sh $SiteName
 
-sleep 30
+sleep 3000
 echo " ho aspettato 300 " `date`
 ps -auxf
 echo "========"
@@ -415,12 +415,18 @@ def delete_pod(pod):
     with open(f"{InterLinkConfigInst['DataRootFolder']}{pod['metadata']['name']}.jid") as f:
         data = f.read()
     jid = int(data.strip())
-    schedd.act(htcondor.JobAction.Remove, f"ClusterId == {jid}")
+    #schedd.act(htcondor.JobAction.Remove, f"ClusterId == {jid}")
+    process = os.popen(f"condor_rm {jid}")
+    preprocessed = process.read()
+    process.close()
 
     #os.remove(f"{InterLinkConfigInst['DataRootFolder']}{pod['metadata']['name']}.out")
     #os.remove(f"{InterLinkConfigInst['DataRootFolder']}{pod['metadata']['name']}.err")
     #os.remove(f"{InterLinkConfigInst['DataRootFolder']}{pod['metadata']['name']}.jid")
     #os.remove(f"{InterLinkConfigInst['DataRootFolder']}{pod['metadata']['name']}")
+
+    return preprocessed
+
 
 def handle_jid(jid, pod):
     if True:
@@ -513,16 +519,21 @@ def StopHandler():
     logging.info("HTCondor Sidecar: received Stop call")
     request_data_string = request.data.decode("utf-8")
     req = json.loads(request_data_string)[0]
+    print("REQUESTED TO DELETE POD IS", req)
     if req is None or not isinstance(req, dict):
         logging.error("Invalid request data")
         return "Invalid request data for stopping", 400
 
     #### DELETE JOB RELATED TO REQUEST
-    pod = req.get("pod", {})
-    try:
-        delete_pod(pod)
-        return "Requested pod successfully deleted", 200
-    except:
+    #pod = req.get("pod", {})
+    if True:
+        return_message = delete_pod(req)
+        print(return_message)
+        if "All" in return_message:
+            return "Requested pod successfully deleted", 200
+        else:
+            return "Something went wrong when deleting the requested pod", 500
+    else:
         return "Something went wrong when deleting the requested pod", 500
 
 def StatusHandler():
@@ -535,17 +546,29 @@ def StatusHandler():
         return "Invalid request data for getting status", 400
 
 
+    #print("STORED JIDS ARE:", JID)
     print("REQ IS", req)
     ####### ELABORATE RESPONSE #################
     #resp = {"PodName": [], "PodStatus": [], "ReturnVal": "Status"}
     #resp = {"PodName": [], "PodNamespace": [], "PodStatus": [], }
     resp = [{"Name": [], "Namespace": [], "Status": [], }]
+    with open(InterLinkConfigInst['DataRootFolder'] + req['metadata']['name'] + ".jid", "r") as f:
+        jid_job = f.read()
     #resp = []
-    for jid in JID:
-        if jid['pod']['metadata']['name'] == req['metadata']['name']:
+    #for jid in JID:
+    if True:
+        #print(jid['pod']['metadata']['name'])
+        #print(req['metadata']['name'])
+
+        #if jid['pod']['metadata']['name'] == req['pod']['metadata']['name']:
+        #if jid['pod']['metadata']['name'] == req['metadata']['name']:
+        #if jid['JID'] == jid_job:
+        if True:
             this_resp = {}
-            podname = jid['pod']['metadata']['name']
-            podnamespace = jid['pod']['metadata']['namespace']
+            #podname = jid['pod']['metadata']['name']
+            #podnamespace = jid['pod']['metadata']['namespace']
+            podname = req['metadata']['name']
+            podnamespace = req['metadata']['namespace']
             print(type(podname), podname)
             #resp["PodName"].append({"Name": podname})
             #resp["PodNamespace"].append({"Namespace": podnamespace})
@@ -555,7 +578,8 @@ def StatusHandler():
             resp[0]["Namespace"] = podnamespace
             ok = True
             #query_result = schedd.query(constraint=f"ClusterId == {jid['JID']}", projection=["ClusterId", "ProcId", "Out", "JobStatus"],)
-            process = os.popen(f"condor_q {jid['JID']} --json")
+            #process = os.popen(f"condor_q {jid['JID']} --json")
+            process = os.popen(f"condor_q {jid_job} --json")
             preprocessed = process.read()
             process.close()
             print(preprocessed)
@@ -590,7 +614,8 @@ from flask import Flask, request
 app = Flask(__name__)
 #app.add_url_rule('/submit', view_func=SubmitHandler, methods=['POST'])
 app.add_url_rule('/create', view_func=SubmitHandler, methods=['POST'])
-app.add_url_rule('/stop', view_func=StopHandler, methods=['POST'])
+#app.add_url_rule('/stop', view_func=StopHandler, methods=['POST'])
+app.add_url_rule('/delete', view_func=StopHandler, methods=['POST'])
 app.add_url_rule('/status', view_func=StatusHandler, methods=['GET'])
 
 if __name__ == '__main__':
