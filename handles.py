@@ -11,7 +11,6 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--schedd-name", help="Schedd name", type=str, default = "")
 parser.add_argument("--schedd-host", help="Schedd host", type=str, default = "")
 parser.add_argument("--collector-host", help="Collector-host", type=str, default = "")
-#parser.add_argument("--scitokens-file", help="Scitokens file", type=str, default = "")
 parser.add_argument("--cadir", help="CA directory", type=str, default = "")
 parser.add_argument("--certfile", help="cert file", type=str, default = "")
 parser.add_argument("--keyfile", help="key file", type=str, default = "")
@@ -30,8 +29,6 @@ if args.schedd_host != "":
     os.environ['_condor_SCHEDD_HOST'] = args.schedd_host
 if args.collector_host != "":
     os.environ['_condor_COLLECTOR_HOST'] = args.collector_host
-#if args.scitokens_file != "":
-#    os.environ['_condor_SCITOKENS_FILE'] = args.scitokens_file
 if args.cadir != "":
     os.environ['_condor_AUTH_SSL_CLIENT_CADIR'] = args.cadir
 if args.certfile != "":
@@ -70,10 +67,6 @@ interlink_config_path = "/utils/InterLinkConfig.yaml"
 #interlink_config_path = "./InterLinkConfig.yaml"
 InterLinkConfigInst = read_yaml_file(interlink_config_path)
 print("Interlink configuration info:", InterLinkConfigInst)
-
-
-import htcondor
-schedd = htcondor.Schedd()
 
 def prepare_envs(container):
     env = ["--env"]
@@ -258,114 +251,23 @@ def produce_htcondor_singularity_script(containers, metadata, commands):
     #try:
     if True:
         with open(executable_path, "w") as f:
-            #prefix += f"\n{InterLinkConfigInst['CommandPrefix']}"
-            if dummy_job == False:
-                prefix_ = f"\n{InterLinkConfigInst['CommandPrefix']}"
-                batch_macros = f"""#!/bin/bash
-. ~/.bash_profile
-export SINGULARITYENV_SINGULARITY_TMPDIR=$CINECA_SCRATCH
-export SINGULARITYENV_SINGULARITY_CACHEDIR=$CINECA_SCRATCH
-pwd; hostname;
+            batch_macros = f"""#!/bin/bash
 """
-                # date{prefix_};
-                #f.write(batch_macros + "\n" + " ".join(command))
-                commands_joined = []
-                for i in range(0,len(commands)):
-                    commands_joined.append(" ".join(commands[i]))
-                f.write(batch_macros + "\n" + "\n".join(commands_joined))
-            else:
-                batch_macros = f"""#!/bin/bash
-sleep 100000000
-"""
-                f.write(batch_macros)
+            commands_joined = []
+            for i in range(0,len(commands)):
+                commands_joined.append(" ".join(commands[i]))
+            f.write(batch_macros + "\n" + "\n".join(commands_joined))
 
-        job = {
-            "executable": "{}".format(executable_path),  # the program to run on the execute node
-            "output": "{}{}.out".format(InterLinkConfigInst['DataRootFolder'], metadata['name']) ,      # anything the job prints to standard output will end up in this file
-            "error": "{}{}.err".format(InterLinkConfigInst['DataRootFolder'], metadata['name']) ,         # anything the job prints to standard error will end up in this file
-            "log": "{}{}.log".format(InterLinkConfigInst['DataRootFolder'], metadata['name'])   ,          # this file will contain a record of what happened to the job
-            "request_cpus": "1",            # how many CPU cores we want
-            "request_memory": "128MB",      # how much memory we want
-            "request_disk": "128MB",        # how much disk space we want
-            }
-
-        os.chmod(executable_path, 0o0777)
-    #except Exception as e:
-    else:
-        logging.error(f"Unable to prepare the job: {e}")
-
-    return htcondor.Submit(job)
-
-
-def produce_htcondor_host_script(container, metadata, t2):
-    executable_path = f"./{InterLinkConfigInst['DataRootFolder']}/{container['name']}.sh"
-    sub_path = f"./{InterLinkConfigInst['DataRootFolder']}/{container['name']}.jdl"
-    if True:
-        with open(executable_path, "w") as f:
-            #prefix += f"\n{InterLinkConfigInst['CommandPrefix']}"
-            if dummy_job == False:
-                prefix_ = f"\n{InterLinkConfigInst['CommandPrefix']}"
-                batch_macros = f"""#!/bin/bash
-echo "SiteName =" $1
-
-SiteName=$1
-
-echo "iniziamo ora " `date`
-wget --no-check-certificate https://cmsdoc.cern.ch/~spiga/condor-10.1.0-1-x86_64_CentOS7-stripped.tgz .
-tar -zxvf condor-10.1.0-1-x86_64_CentOS7-stripped.tgz
-cd condor-10.1.0-1-x86_64_CentOS7-stripped/
-echo " "
-echo "lancio il wn "  `date`
-./setupwn.sh $SiteName
-
-sleep 3000
-echo " ho aspettato 300 " `date`
-ps -auxf
-echo "========"
-echo "========"
-cat var/log/condor/MasterLog
-echo "========"
-echo "========"
-echo "esco "
-cat var/log/condor/StartLog
-"""
-                # date{prefix_};
-
-            else:
-                batch_macros = f"""#!/bin/bash
-sleep 100000000
-"""
-            f.write(batch_macros)
-        job = {
-            #"InitialDir": ".",
-            "executable": "{}".format(executable_path),  # the program to run on the execute node
-            "arguments": "{}".format(t2),  # the program to run on the execute node
-            "output": "{}{}.out".format(InterLinkConfigInst['DataRootFolder'], container['name']) ,      # anything the job prints to standard output will end up in this file
-            "error": "{}{}.err".format(InterLinkConfigInst['DataRootFolder'], container['name']) ,         # anything the job prints to standard error will end up in this file
-            "log": "{}{}.log".format(InterLinkConfigInst['DataRootFolder'], container['name'])   ,          # this file will contain a record of what happened to the job
-            "should_transfer_files": "YES",
-            "request_cpus": "1",            # how many CPU cores we want
-            #"request_cpus": "8",            # how many CPU cores we want
-            "request_memory": "128MB",      # how much memory we want
-            #"request_memory": "16000",      # how much memory we want
-            "request_disk": "128MB",        # how much disk space we want
-            "when_to_transfer_output": "ON_EXIT",
-            "+MaxWallTimeMins" : "60",
-            "+WMAgent_AgentName": "whatever",
-            #"Queue": "1"
-            }
         job = f"""
 Executable = {executable_path}
-
-Arguments  = {t2}
 
 Log        = log/mm_mul.$(Cluster).$(Process).log
 Output     = out/mm_mul.out.$(Cluster).$(Process)
 Error      = err/mm_mul.err.$(Cluster).$(Process)
 
 should_transfer_files = YES
-RequestCpus = 8
-RequestMemory = 16000
+RequestCpus = {requested_cpus}
+RequestMemory = {requested_memory}
 
 when_to_transfer_output = ON_EXIT
 +MaxWallTimeMins = 60
@@ -382,19 +284,54 @@ Queue 1
     else:
         logging.error(f"Unable to prepare the job: {e}")
 
-    #return htcondor.Submit(job)
-    import time
+    return sub_path
 
-    #time.sleep(5)
+
+def produce_htcondor_host_script(container, metadata):
+    executable_path = f"./{InterLinkConfigInst['DataRootFolder']}/{container['name']}.sh"
+    sub_path = f"./{InterLinkConfigInst['DataRootFolder']}/{container['name']}.jdl"
+    if True:
+        with open(executable_path, "w") as f:
+            if dummy_job == False:
+                prefix_ = f"\n{InterLinkConfigInst['CommandPrefix']}"
+                batch_macros = f"""#!{container['command'][-1]}
+""" + '\n'.join(container['args'][-1].split("; "))
+
+            f.write(batch_macros)
+
+        requested_cpu = container['resources']['requests']['cpu']
+        #requested_memory = int(container['resources']['requests']['memory'])/1e6
+        requested_memory = container['resources']['requests']['memory']
+        job = f"""
+Executable = {executable_path}
+
+Log        = log/mm_mul.$(Cluster).$(Process).log
+Output     = out/mm_mul.out.$(Cluster).$(Process)
+Error      = err/mm_mul.err.$(Cluster).$(Process)
+
+should_transfer_files = YES
+RequestCpus = {requested_cpu}
+RequestMemory = {requested_memory}
+
+when_to_transfer_output = ON_EXIT
++MaxWallTimeMins = 60
+
++WMAgent_AgentName = "whatever"
+
+Queue 1
+"""
+        print(job)
+        with open(sub_path, "w") as f_:
+            f_.write(job)
+        os.chmod(executable_path, 0o0777)
+    #except Exception as e:
+    else:
+        logging.error(f"Unable to prepare the job: {e}")
+
     return sub_path
 
 def htcondor_batch_submit(job):
     logging.info("Submitting HTCondor job")
-    #submit_result = schedd.submit(job)#, spool = True, )
-    #spool_result = schedd.spool(submit_result.clusterad())
-    #return submit_result
-    #process = os.popen(f"condor_submit -pool {args.collector_host} -remote {args.schedd_name} {job}")
-    #process = os.popen(f"condor_submit -pool {args.collector_host} -remote {args.schedd_host} {job}")
     process = os.popen(f"condor_submit -pool {args.collector_host} -remote {args.schedd_host} {job} -spool")
     preprocessed = process.read()
     process.close()
@@ -402,20 +339,12 @@ def htcondor_batch_submit(job):
 
     return jid
 
-def delete_container(container):
-    logging.info(f"Deleting container {container['name']}")
-    with open(f"{InterLinkConfigInst['DataRootFolder']}{container['name']}.jid") as f:
-        data = f.read()
-    jid = int(data.strip())
-    schedd.act(htcondor.JobAction.Remove, f"ClusterId == {jid}")
-    os.remove(f"{InterLinkConfigInst['DataRootFolder']}{container['name']}.jid")
 
 def delete_pod(pod):
     logging.info(f"Deleting pod {pod['metadata']['name']}")
     with open(f"{InterLinkConfigInst['DataRootFolder']}{pod['metadata']['name']}.jid") as f:
         data = f.read()
     jid = int(data.strip())
-    #schedd.act(htcondor.JobAction.Remove, f"ClusterId == {jid}")
     process = os.popen(f"condor_rm {jid}")
     preprocessed = process.read()
     process.close()
@@ -430,7 +359,6 @@ def delete_pod(pod):
 
 def handle_jid(jid, pod):
     if True:
-        #with open(f"{InterLinkConfigInst['DataRootFolder']}{pod['metadata']['name']}.jid", "w") as f:
         with open(f"{InterLinkConfigInst['DataRootFolder']}{pod['metadata']['name']}.jid", "w") as f:
             f.write(str(jid))
         JID.append({"JID": jid, "pod": pod})
@@ -460,7 +388,7 @@ def SubmitHandler():
     singularity_commands = []
 
     #NORMAL CASE
-    if not "host:" in containers[0]["image"]:
+    if not "host" in containers[0]["image"]:
         for container in containers:
             logging.info(f"Beginning script generation for container {container['name']}")
             commstr1 = ["singularity", "exec"]
@@ -470,7 +398,6 @@ def SubmitHandler():
                 if c["name"] == container["name"]:
                     container_standalone = c
             mounts = prepare_mounts(pod, container_standalone)
-            #mounts = [""]
             if container["image"].startswith("/"):
                 image_uri = metadata.get("Annotations", {}).get("htcondor-job.knoc.io/image-root", None)
                 if image_uri:
@@ -492,12 +419,11 @@ def SubmitHandler():
             singularity_commands.append(singularity_command)
         path = produce_htcondor_singularity_script(containers, metadata, singularity_commands)
 
-    ### WLCG T2 HTCONDOR CASE
     else:
         print("host keyword detected in the first container, ignoring other containers")
         sitename = containers[0]["image"].split(":")[-1]
         print(sitename)
-        path = produce_htcondor_host_script(containers[0], metadata, sitename)
+        path = produce_htcondor_host_script(containers[0], metadata)
 
     out_jid = htcondor_batch_submit(path)
     print(out_jid)
@@ -507,7 +433,6 @@ def SubmitHandler():
     if True:
         with open(InterLinkConfigInst['DataRootFolder'] + pod['metadata']['name'] + ".jid", "r") as f:
             jid = f.read()
-        #JID.append({"JID": jid, "Pod": pod})
         #except FileNotFoundError:
         return "Job submitted successfully", 200
     else:
@@ -525,7 +450,6 @@ def StopHandler():
         return "Invalid request data for stopping", 400
 
     #### DELETE JOB RELATED TO REQUEST
-    #pod = req.get("pod", {})
     if True:
         return_message = delete_pod(req)
         print(return_message)
@@ -545,40 +469,20 @@ def StatusHandler():
         logging.error("Invalid request data")
         return "Invalid request data for getting status", 400
 
-
-    #print("STORED JIDS ARE:", JID)
     print("REQ IS", req)
     ####### ELABORATE RESPONSE #################
-    #resp = {"PodName": [], "PodStatus": [], "ReturnVal": "Status"}
-    #resp = {"PodName": [], "PodNamespace": [], "PodStatus": [], }
     resp = [{"Name": [], "Namespace": [], "Status": [], }]
     with open(InterLinkConfigInst['DataRootFolder'] + req['metadata']['name'] + ".jid", "r") as f:
         jid_job = f.read()
-    #resp = []
-    #for jid in JID:
     if True:
-        #print(jid['pod']['metadata']['name'])
-        #print(req['metadata']['name'])
-
-        #if jid['pod']['metadata']['name'] == req['pod']['metadata']['name']:
-        #if jid['pod']['metadata']['name'] == req['metadata']['name']:
-        #if jid['JID'] == jid_job:
         if True:
             this_resp = {}
-            #podname = jid['pod']['metadata']['name']
-            #podnamespace = jid['pod']['metadata']['namespace']
             podname = req['metadata']['name']
             podnamespace = req['metadata']['namespace']
             print(type(podname), podname)
-            #resp["PodName"].append({"Name": podname})
-            #resp["PodNamespace"].append({"Namespace": podnamespace})
-            #this_resp["name"] = podname
-            #this_resp["namespace"] = podnamespace
             resp[0]["Name"] = podname
             resp[0]["Namespace"] = podnamespace
             ok = True
-            #query_result = schedd.query(constraint=f"ClusterId == {jid['JID']}", projection=["ClusterId", "ProcId", "Out", "JobStatus"],)
-            #process = os.popen(f"condor_q {jid['JID']} --json")
             process = os.popen(f"condor_q {jid_job} --json")
             preprocessed = process.read()
             process.close()
@@ -591,30 +495,19 @@ def StatusHandler():
             except:
                 ok = False
                 logging.error("Something went wrong when retrieving job status")
-            #if len(query_result) == 0:
-            #    ok = False
-            #elif query_result[0]['JobStatus'] != 2:
-            #    ok = False
             if ok == True:
-                #resp["PodStatus"].append({"PodStatus": 0})
                 resp[0]["Status"] = 0
-                #this_resp["status"] = 0
             else:
-                #resp["PodStatus"].append({"PodStatus": 1})
                 resp[0]["Status"] = 1
-                #resp[0]["Status"] = 0   #####################FIX SLEEEP VK
-                #this_resp["status"] = 1
         return json.dumps(resp), 200
 
     else:
         return "Something went wrong when retrieving pod status", 500
-# The above functions can be used as handlers for appropriate endpoints in your web server.
+
 from flask import Flask, request
 
 app = Flask(__name__)
-#app.add_url_rule('/submit', view_func=SubmitHandler, methods=['POST'])
 app.add_url_rule('/create', view_func=SubmitHandler, methods=['POST'])
-#app.add_url_rule('/stop', view_func=StopHandler, methods=['POST'])
 app.add_url_rule('/delete', view_func=StopHandler, methods=['POST'])
 app.add_url_rule('/status', view_func=StatusHandler, methods=['GET'])
 
