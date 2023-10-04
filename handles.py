@@ -86,9 +86,10 @@ def prepare_mounts(pod, container_standalone):
     pod_name = container_standalone['name'].split("-")[:6] if len(container_standalone['name'].split("-")) > 6 else container_standalone['name'].split("-")
     pod_volume_spec = None
     pod_name_folder = os.path.join(InterLinkConfigInst['DataRootFolder'], "-".join(pod_name[:-1]))
-    for c in pod['spec']['containers']:
-        if c['name'] == container_standalone['name']:
-            container = c
+    #for c in pod['spec']['containers']:
+    #    if c['name'] == container_standalone['name']:
+    #        container = c
+    container = container_standalone
     try:
         os.makedirs(pod_name_folder, exist_ok=True)
         logging.info(f"Successfully created folder {pod_name_folder}")
@@ -121,12 +122,16 @@ def prepare_mounts(pod, container_standalone):
         return [""]
 
 
-    path_hardcoded = ("/cvmfs/grid.cern.ch/etc/grid-security:/etc/grid-security" + "," +
-                      "/cvmfs:/cvmfs" + "," +
-                      "/exa5/scratch/user/spigad" + "," +
-                      "/exa5/scratch/user/spigad/CMS/SITECONF" + ",")
+    #path_hardcoded = ("/cvmfs/grid.cern.ch/etc/grid-security:/etc/grid-security" + "," +
+    #                  "/cvmfs:/cvmfs" + "," +
+    #                  "/exa5/scratch/user/spigad" + "," +
+    #                  "/exa5/scratch/user/spigad/CMS/SITECONF" + ",")
+    path_hardcoded = ""
     mount_data.append(path_hardcoded)
     mounts.append(",".join(mount_data))
+    print("mounts are", mounts)
+    if mounts[1] == "":
+        mounts = [""]
     return mounts
 
 def mountConfigMaps(pod, container_standalone):
@@ -246,9 +251,31 @@ def mount_empty_dir(container, pod):
 
     return ed_path
 
+def parse_string_with_suffix(value_str):
+    # Define a dictionary to map suffixes to their corresponding multipliers
+    suffixes = {
+        'k': 10**3,
+        'M': 10**6,
+        'G': 10**9,
+    }
+
+    numeric_part = value_str[:-1]
+    suffix = value_str[-1]
+
+    if suffix in suffixes:
+        numeric_value = int(float(numeric_part) * suffixes[suffix])
+    else:
+        numeric_value = int(value_str)
+
+    return numeric_value
+
 def produce_htcondor_singularity_script(containers, metadata, commands):
-    executable_path = f"./{metadata['name']}.sh"
+    #executable_path = f"./{metadata['name']}.sh"
+    executable_path = f"./{InterLinkConfigInst['DataRootFolder']}/{metadata['name']}.sh"
+    sub_path = f"./{InterLinkConfigInst['DataRootFolder']}/{metadata['name']}.jdl"
     #try:
+    requested_cpus = sum([int(c['resources']['requests']['cpu']) for c in containers])
+    requested_memory = sum([parse_string_with_suffix(c['resources']['requests']['memory']) for c in containers])
     if True:
         with open(executable_path, "w") as f:
             batch_macros = f"""#!/bin/bash
@@ -269,7 +296,7 @@ should_transfer_files = YES
 RequestCpus = {requested_cpus}
 RequestMemory = {requested_memory}
 
-when_to_transfer_output = ON_EXIT
+when_to_transfer_output = ON_EXIT_OR_EVICT
 +MaxWallTimeMins = 60
 
 +WMAgent_AgentName = "whatever"
@@ -313,7 +340,7 @@ should_transfer_files = YES
 RequestCpus = {requested_cpu}
 RequestMemory = {requested_memory}
 
-when_to_transfer_output = ON_EXIT
+when_to_transfer_output = ON_EXIT_OR_EVICT
 +MaxWallTimeMins = 60
 
 +WMAgent_AgentName = "whatever"
@@ -351,7 +378,7 @@ def delete_pod(pod):
 
     #os.remove(f"{InterLinkConfigInst['DataRootFolder']}{pod['metadata']['name']}.out")
     #os.remove(f"{InterLinkConfigInst['DataRootFolder']}{pod['metadata']['name']}.err")
-    #os.remove(f"{InterLinkConfigInst['DataRootFolder']}{pod['metadata']['name']}.jid")
+    os.remove(f"{InterLinkConfigInst['DataRootFolder']}{pod['metadata']['name']}.jid")
     #os.remove(f"{InterLinkConfigInst['DataRootFolder']}{pod['metadata']['name']}")
 
     return preprocessed
@@ -394,10 +421,10 @@ def SubmitHandler():
             commstr1 = ["singularity", "exec"]
             envs = prepare_envs(container)
             image = ""
-            for c in containers_standalone:
-                if c["name"] == container["name"]:
-                    container_standalone = c
-            mounts = prepare_mounts(pod, container_standalone)
+            #for c in containers_standalone:
+            #    if c["name"] == container["name"]:
+            #        container_standalone = c
+            mounts = prepare_mounts(pod, container)
             if container["image"].startswith("/"):
                 image_uri = metadata.get("Annotations", {}).get("htcondor-job.knoc.io/image-root", None)
                 if image_uri:
@@ -469,7 +496,7 @@ def StatusHandler():
         logging.error("Invalid request data")
         return "Invalid request data for getting status", 400
 
-    print("REQ IS", req)
+    #print("REQ IS", req)
     ####### ELABORATE RESPONSE #################
     resp = [{"Name": [], "Namespace": [], "Status": [], }]
     with open(InterLinkConfigInst['DataRootFolder'] + req['metadata']['name'] + ".jid", "r") as f:
@@ -479,14 +506,14 @@ def StatusHandler():
             this_resp = {}
             podname = req['metadata']['name']
             podnamespace = req['metadata']['namespace']
-            print(type(podname), podname)
+            #print(type(podname), podname)
             resp[0]["Name"] = podname
             resp[0]["Namespace"] = podnamespace
             ok = True
             process = os.popen(f"condor_q {jid_job} --json")
             preprocessed = process.read()
             process.close()
-            print(preprocessed)
+            #print(preprocessed)
             try:
                 job_ = json.loads(preprocessed)
                 status = job_[0]["JobStatus"]
@@ -498,7 +525,8 @@ def StatusHandler():
             if ok == True:
                 resp[0]["Status"] = 0
             else:
-                resp[0]["Status"] = 1
+                #resp[0]["Status"] = 1
+                resp[0]["Status"] = 0
         return json.dumps(resp), 200
 
     else:
