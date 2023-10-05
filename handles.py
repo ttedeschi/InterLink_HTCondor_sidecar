@@ -86,10 +86,10 @@ def prepare_mounts(pod, container_standalone):
     pod_name = container_standalone['name'].split("-")[:6] if len(container_standalone['name'].split("-")) > 6 else container_standalone['name'].split("-")
     pod_volume_spec = None
     pod_name_folder = os.path.join(InterLinkConfigInst['DataRootFolder'], "-".join(pod_name[:-1]))
-    #for c in pod['spec']['containers']:
-    #    if c['name'] == container_standalone['name']:
-    #        container = c
-    container = container_standalone
+    for c in pod['spec']['containers']:
+        if c['name'] == container_standalone['name']:
+            container = c
+    #container = container_standalone
     try:
         os.makedirs(pod_name_folder, exist_ok=True)
         logging.info(f"Successfully created folder {pod_name_folder}")
@@ -155,12 +155,13 @@ def mountConfigMaps(pod, container_standalone):
                 if vol["name"] != mountSpec["name"]:
                     continue
                 if "configMap" in vol.keys():
+                    print("container_standaolone:", container_standalone)
                     cfgMaps = container_standalone['configMaps']
                     for cfgMap in cfgMaps:
                         podConfigMapDir = os.path.join(wd, data_root_folder, f"{pod['metadata']['namespace']}-{pod['metadata']['uid']}/configMaps/", vol["name"])
                         for key in cfgMap["data"].keys():
                             path = os.path.join(wd, podConfigMapDir, key)
-                            path += f":{mountSpec['mountPath']}/{key} "
+                            path += f":{mountSpec['mountPath']}/{key}"
                             configMapNamePaths.append(path)
                         cmd = ["-p", podConfigMapDir]
                         shell = subprocess.Popen(["mkdir"] + cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -269,7 +270,7 @@ def parse_string_with_suffix(value_str):
 
     return numeric_value
 
-def produce_htcondor_singularity_script(containers, metadata, commands):
+def produce_htcondor_singularity_script(containers, metadata, commands, input_files):
     #executable_path = f"./{metadata['name']}.sh"
     executable_path = f"./{InterLinkConfigInst['DataRootFolder']}/{metadata['name']}.sh"
     sub_path = f"./{InterLinkConfigInst['DataRootFolder']}/{metadata['name']}.jdl"
@@ -292,6 +293,7 @@ Log        = log/mm_mul.$(Cluster).$(Process).log
 Output     = out/mm_mul.out.$(Cluster).$(Process)
 Error      = err/mm_mul.err.$(Cluster).$(Process)
 
+transfer_input_files = {",".join(input_files)}
 should_transfer_files = YES
 RequestCpus = {requested_cpus}
 RequestMemory = {requested_memory}
@@ -421,10 +423,13 @@ def SubmitHandler():
             commstr1 = ["singularity", "exec"]
             envs = prepare_envs(container)
             image = ""
-            #for c in containers_standalone:
-            #    if c["name"] == container["name"]:
-            #        container_standalone = c
-            mounts = prepare_mounts(pod, container)
+            if containers_standalone != None:
+                for c in containers_standalone:
+                    if c["name"] == container["name"]:
+                        container_standalone = c
+                mounts = prepare_mounts(pod, container_standalone)
+            else:
+                mounts = [""]
             if container["image"].startswith("/"):
                 image_uri = metadata.get("Annotations", {}).get("htcondor-job.knoc.io/image-root", None)
                 if image_uri:
@@ -436,15 +441,25 @@ def SubmitHandler():
                 image = "docker://" + container["image"]
             image = container["image"]
             logging.info("Appending all commands together...")
+            input_files = []
+            for mount in mounts[-1].split(","):
+                input_files.append(mount.split(":")[0])
+            local_mounts = ["--bind",""]
+            for mount in (mounts[-1].split(","))[:-1]:
+                print(mount)
+                print(mount.split(":"))
+                print()
+                local_mounts[1] += "./" + (mount.split(":")[0]).split("/")[-1] + ":" + mount.split(":")[1] + ","
+
             if "command" in container.keys() and "args" in container.keys():
-                singularity_command = commstr1 + envs + mounts + [image] + container["command"] + container["args"]
+                singularity_command = commstr1 + envs + local_mounts + [image] + container["command"] + container["args"]
             elif "command" in container.keys():
-                singularity_command = commstr1 + envs + mounts + [image] + container["command"]
+                singularity_command = commstr1 + envs + local_mounts + [image] + container["command"]
             else:
-                singularity_command = commstr1 + envs + mounts + [image]
+                singularity_command = commstr1 + envs + local_mounts + [image]
             print("singularity_command:", singularity_command)
             singularity_commands.append(singularity_command)
-        path = produce_htcondor_singularity_script(containers, metadata, singularity_commands)
+        path = produce_htcondor_singularity_script(containers, metadata, singularity_commands, input_files)
 
     else:
         print("host keyword detected in the first container, ignoring other containers")
