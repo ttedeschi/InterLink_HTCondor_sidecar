@@ -1,13 +1,14 @@
 VKTokenFile: "$HOME/interLink/token"
 InterlinkURL: "http://localhost"
 SidecarURL: "http://localhost"
-InterlinkPort: "3000"
-SidecarService: "htcondor" #docker, slurm, htcondor
+InterlinkPort: "30002"
+SidecarService: "htcondor" #docker, slurm
+SidecarPort: "8000" #docker, slurm
 SbatchPath: "/usr/bin/sbatch"
 ScancelPath: "/usr/bin/scancel"
 CommandPrefix: ""
 ExportPodData: true
-DataRootFolder: ".knoc/"
+DataRootFolder: ".knoc/" #".knoc/"
 ServiceAccount: "knoc"
 Namespace: "vk"
 Tsocks: false
