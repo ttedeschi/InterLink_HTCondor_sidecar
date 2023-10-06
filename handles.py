@@ -544,8 +544,8 @@ def StatusHandler():
             if ok == True:
                 resp[0]["Status"] = 0
             else:
-                #resp[0]["Status"] = 1
-                resp[0]["Status"] = 0
+                resp[0]["Status"] = 1
+                #resp[0]["Status"] = 0
         return json.dumps(resp), 200
 
     else:
