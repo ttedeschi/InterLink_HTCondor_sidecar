@@ -2,16 +2,16 @@ apiVersion: v1
 kind: Pod
 metadata:
   name: test-pod
-  annotations:
-    slurm-job.knoc.io/flags: "--job-name=testvkub  -t 2800  --ntasks=8 --nodes=1 --mem-per-cpu=2000"
 spec:
   restartPolicy: OnFailure
   containers:
-  #- image: /cvmfs/unpacked.cern.ch/registry.hub.docker.com/cmssw/el8:x86_64
   - image: docker://busybox:latest
     volumeMounts:
     - name: foo
       mountPath: "/etc/foo"
+      readOnly: true
+    - name: foo2
+      mountPath: "/etc/foo2"
       readOnly: true
     command:
       - sleep
@@ -22,20 +22,6 @@ spec:
       requests:
         memory: "3000"
         cpu: "1"
-  #- image: docker://busybox:1.35.0
-    #volumeMounts:
-    #- name: foo
-    #  mountPath: "/etc/foo"
-    #  readOnly: true
-    #command:
-    #  - sleep
-    #  - infinity
-    #imagePullPolicy: Always
-    #name: busyecho2
-    #resources:
-    #  requests:
-    #    memory: "1600"
-    #    cpu: "2"
   dnsPolicy: ClusterFirst
   nodeSelector:
     kubernetes.io/role: agent
@@ -49,6 +35,6 @@ spec:
   - name: foo
     configMap:
       name: my-configmap
-  #- name: foo2
-  #  secret:
-  #    secretName: mysecret
+  - name: foo2
+    secret:
+      secretName: mysecret
