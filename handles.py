@@ -209,6 +209,9 @@ def mountSecrets(pod, container_standalone):
                     print("here4")
                     secrets = container_standalone['secrets']
                     for secret in secrets:
+                        print(secret['metadata']['name'], ":", vol["secret"]["secretName"])
+                        if secret['metadata']['name'] != vol["secret"]["secretName"]:
+                            continue
                         pod_secret_dir = os.path.join(wd, data_root_folder, f"{pod['metadata']['namespace']}-{pod['metadata']['uid']}/secrets/", vol["name"])
                         for key in secret["data"]:
                             path = os.path.join(pod_secret_dir, key)
@@ -541,8 +544,8 @@ def StatusHandler():
             if ok == True:
                 resp[0]["Status"] = 0
             else:
-                resp[0]["Status"] = 1
-                #resp[0]["Status"] = 0
+                #resp[0]["Status"] = 1
+                resp[0]["Status"] = 0
         return json.dumps(resp), 200
 
     else:
