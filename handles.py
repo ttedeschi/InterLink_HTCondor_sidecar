@@ -199,30 +199,31 @@ def mountSecrets(pod, container_standalone):
         data_root_folder = InterLinkConfigInst["DataRootFolder"]
         cmd = ["-rf", os.path.join(wd, data_root_folder, "secrets")]
         subprocess.run(["rm"] + cmd, check=True)
-        for mount_spec in container["volumeMounts"]:
+        for mountSpec in container["volumeMounts"]:
+            print(mountSpec["name"])
             pod_volume_spec = None
             for vol in pod["spec"]["volumes"]:
-                if vol["name"] == mount_spec["name"]:
-                    pod_volume_spec = vol["volumeSource"]
-                    break
-            if "Secret" in vol.keys():
-                secrets = container_standalone['secrets']
-                for secret in secrets:
-                    pod_secret_dir = os.path.join(wd, data_root_folder, f"{pod['metadata']['namespace']}-{pod['metadata']['uid']}/secrets/", vol["name"])
-                    for key in secret["data"]:
-                        path = os.path.join(pod_secret_dir, key)
-                        path += f":{mount_spec['MountPath']}/{key} "
-                        secret_name_paths.append(path)
-                    cmd = ["-p", pod_secret_dir]
-                    subprocess.run(["mkdir"] + cmd, check=True)
-                    logging.debug(f"--- Created folder {pod_secret_dir}")
-                    logging.debug("--- Writing Secret files")
-                    for k, v in secret["Data"].items():
-                        full_path = os.path.join(pod_secret_dir, k)
-                        with open(full_path, "w") as f:
-                            f.write(v)
-                        os.chmod(full_path, oct(vol["secret"]["defaultMode"]))
-                        logging.debug(f"--- Written Secret file {full_path}")
+                if vol["name"] != mountSpec["name"]:
+                    continue
+                if "secret" in vol.keys():
+                    print("here4")
+                    secrets = container_standalone['secrets']
+                    for secret in secrets:
+                        pod_secret_dir = os.path.join(wd, data_root_folder, f"{pod['metadata']['namespace']}-{pod['metadata']['uid']}/secrets/", vol["name"])
+                        for key in secret["data"]:
+                            path = os.path.join(pod_secret_dir, key)
+                            path += f":{mountSpec['mountPath']}/{key}"
+                            secret_name_paths.append(path)
+                        cmd = ["-p", pod_secret_dir]
+                        subprocess.run(["mkdir"] + cmd, check=True)
+                        logging.debug(f"--- Created folder {pod_secret_dir}")
+                        logging.debug("--- Writing Secret files")
+                        for k, v in secret["data"].items():
+                            full_path = os.path.join(pod_secret_dir, k)
+                            with open(full_path, "w") as f:
+                                f.write(v)
+                            os.chmod(full_path, vol["secret"]["defaultMode"])
+                            logging.debug(f"--- Written Secret file {full_path}")
                     #else:
                     #    logging.error(f"Could not write Secret file {full_path}: {e}")
                     #    try:
@@ -540,8 +541,8 @@ def StatusHandler():
             if ok == True:
                 resp[0]["Status"] = 0
             else:
-                #resp[0]["Status"] = 1
-                resp[0]["Status"] = 0
+                resp[0]["Status"] = 1
+                #resp[0]["Status"] = 0
         return json.dumps(resp), 200
 
     else:
