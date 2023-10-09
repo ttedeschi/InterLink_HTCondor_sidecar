@@ -6,6 +6,7 @@ import logging
 import yaml
 import shutil
 import argparse
+
 parser = argparse.ArgumentParser()
 
 parser.add_argument("--schedd-name", help="Schedd name", type=str, default = "")
@@ -51,9 +52,6 @@ dummy_job = args.dummy_job
 global JID
 JID = []
 
-global prefix
-prefix = ""
-
 def read_yaml_file(file_path):
     with open(file_path, 'r') as file:
         try:
@@ -62,9 +60,9 @@ def read_yaml_file(file_path):
         except yaml.YAMLError as e:
             print("Error reading YAML file:", e)
             return None
+
 global InterLinkConfigInst
-interlink_config_path = "/utils/InterLinkConfig.yaml"
-#interlink_config_path = "./InterLinkConfig.yaml"
+interlink_config_path = "./SidecarConfig.yaml"
 InterLinkConfigInst = read_yaml_file(interlink_config_path)
 print("Interlink configuration info:", InterLinkConfigInst)
 
@@ -89,7 +87,6 @@ def prepare_mounts(pod, container_standalone):
     for c in pod['spec']['containers']:
         if c['name'] == container_standalone['name']:
             container = c
-    #container = container_standalone
     try:
         os.makedirs(pod_name_folder, exist_ok=True)
         logging.info(f"Successfully created folder {pod_name_folder}")
@@ -121,11 +118,6 @@ def prepare_mounts(pod, container_standalone):
         logging.info(f"Container has no volume mount")
         return [""]
 
-
-    #path_hardcoded = ("/cvmfs/grid.cern.ch/etc/grid-security:/etc/grid-security" + "," +
-    #                  "/cvmfs:/cvmfs" + "," +
-    #                  "/exa5/scratch/user/spigad" + "," +
-    #                  "/exa5/scratch/user/spigad/CMS/SITECONF" + ",")
     path_hardcoded = ""
     mount_data.append(path_hardcoded)
     mounts.append(",".join(mount_data))
@@ -206,7 +198,6 @@ def mountSecrets(pod, container_standalone):
                 if vol["name"] != mountSpec["name"]:
                     continue
                 if "secret" in vol.keys():
-                    print("here4")
                     secrets = container_standalone['secrets']
                     for secret in secrets:
                         print(secret['metadata']['name'], ":", vol["secret"]["secretName"])
@@ -257,7 +248,6 @@ def mount_empty_dir(container, pod):
     return ed_path
 
 def parse_string_with_suffix(value_str):
-    # Define a dictionary to map suffixes to their corresponding multipliers
     suffixes = {
         'k': 10**3,
         'M': 10**6,
@@ -275,17 +265,16 @@ def parse_string_with_suffix(value_str):
     return numeric_value
 
 def produce_htcondor_singularity_script(containers, metadata, commands, input_files):
-    #executable_path = f"./{metadata['name']}.sh"
     executable_path = f"./{InterLinkConfigInst['DataRootFolder']}/{metadata['name']}.sh"
     sub_path = f"./{InterLinkConfigInst['DataRootFolder']}/{metadata['name']}.jdl"
-    #try:
     requested_cpus = sum([int(c['resources']['requests']['cpu']) for c in containers])
     requested_memory = sum([parse_string_with_suffix(c['resources']['requests']['memory']) for c in containers])
-    if True:
+    prefix_ = f"\n{InterLinkConfigInst['CommandPrefix']}"
+    try:
         with open(executable_path, "w") as f:
             batch_macros = f"""#!/bin/bash
 """
-            commands_joined = []
+            commands_joined = [prefix_]
             for i in range(0,len(commands)):
                 commands_joined.append(" ".join(commands[i]))
             f.write(batch_macros + "\n" + "\n".join(commands_joined))
@@ -313,21 +302,18 @@ Queue 1
         with open(sub_path, "w") as f_:
             f_.write(job)
         os.chmod(executable_path, 0o0777)
-    #except Exception as e:
-    else:
+    except Exception as e:
         logging.error(f"Unable to prepare the job: {e}")
 
     return sub_path
 
 
 def produce_htcondor_host_script(container, metadata):
-    executable_path = f"./{InterLinkConfigInst['DataRootFolder']}/{container['name']}.sh"
-    sub_path = f"./{InterLinkConfigInst['DataRootFolder']}/{container['name']}.jdl"
-    if True:
+    executable_path = f"{InterLinkConfigInst['DataRootFolder']}{metadata['name']}.sh"
+    sub_path = f"{InterLinkConfigInst['DataRootFolder']}{metadata['name']}.jdl"
+    try:
         with open(executable_path, "w") as f:
-            if dummy_job == False:
-                prefix_ = f"\n{InterLinkConfigInst['CommandPrefix']}"
-                batch_macros = f"""#!{container['command'][-1]}
+            batch_macros = f"""#!{container['command'][-1]}
 """ + '\n'.join(container['args'][-1].split("; "))
 
             f.write(batch_macros)
@@ -357,8 +343,7 @@ Queue 1
         with open(sub_path, "w") as f_:
             f_.write(job)
         os.chmod(executable_path, 0o0777)
-    #except Exception as e:
-    else:
+    except Exception as e:
         logging.error(f"Unable to prepare the job: {e}")
 
     return sub_path
@@ -382,10 +367,9 @@ def delete_pod(pod):
     preprocessed = process.read()
     process.close()
 
-    #os.remove(f"{InterLinkConfigInst['DataRootFolder']}{pod['metadata']['name']}.out")
-    #os.remove(f"{InterLinkConfigInst['DataRootFolder']}{pod['metadata']['name']}.err")
     os.remove(f"{InterLinkConfigInst['DataRootFolder']}{pod['metadata']['name']}.jid")
-    #os.remove(f"{InterLinkConfigInst['DataRootFolder']}{pod['metadata']['name']}")
+    os.remove(f"{InterLinkConfigInst['DataRootFolder']}{pod['metadata']['name']}.sh")
+    os.remove(f"{InterLinkConfigInst['DataRootFolder']}{pod['metadata']['name']}.jdl")
 
     return preprocessed
 
@@ -408,14 +392,14 @@ def SubmitHandler():
     req = json.loads(request_data_string)[0]
     if req is None or not isinstance(req, dict):
         logging.error("Invalid request data for submitting")
-        print("REQUEST BODY ISSSSS: ", req)
+        print("Invalid submit request body is: ", req)
         return "Invalid request data for submitting", 400
 
     ###### ELABORATE RESPONSE ###########
     pod = req.get("pod", {})
     print(pod)
     containers_standalone = req.get("container", {})
-    print("REQUESTED POD IS: ", pod['metadata']['name'])
+    print("Requested pod metadata name is: ", pod['metadata']['name'])
     metadata = pod.get("metadata", {})
     containers = pod.get("spec", {}).get("containers", [])
     singularity_commands = []
@@ -450,9 +434,6 @@ def SubmitHandler():
                 input_files.append(mount.split(":")[0])
             local_mounts = ["--bind",""]
             for mount in (mounts[-1].split(","))[:-1]:
-                print(mount)
-                print(mount.split(":"))
-                print()
                 local_mounts[1] += "./" + (mount.split(":")[0]).split("/")[-1] + ":" + mount.split(":")[1] + ","
 
             if "command" in container.keys() and "args" in container.keys():
@@ -472,16 +453,14 @@ def SubmitHandler():
         path = produce_htcondor_host_script(containers[0], metadata)
 
     out_jid = htcondor_batch_submit(path)
-    print(out_jid)
+    print("Job was submitted with cluster id: ",out_jid)
     handle_jid(out_jid, pod)
-    #logging.info(out)
 
-    if True:
+    try:
         with open(InterLinkConfigInst['DataRootFolder'] + pod['metadata']['name'] + ".jid", "r") as f:
             jid = f.read()
-        #except FileNotFoundError:
         return "Job submitted successfully", 200
-    else:
+    except:
         logging.error("Unable to read JID from file")
         return "Something went wrong in job submission", 500
 
@@ -490,20 +469,20 @@ def StopHandler():
     logging.info("HTCondor Sidecar: received Stop call")
     request_data_string = request.data.decode("utf-8")
     req = json.loads(request_data_string)[0]
-    print("REQUESTED TO DELETE POD IS", req)
     if req is None or not isinstance(req, dict):
+        print("Invalid delete request body is: ", req)
         logging.error("Invalid request data")
         return "Invalid request data for stopping", 400
 
     #### DELETE JOB RELATED TO REQUEST
-    if True:
+    try:
         return_message = delete_pod(req)
         print(return_message)
         if "All" in return_message:
             return "Requested pod successfully deleted", 200
         else:
             return "Something went wrong when deleting the requested pod", 500
-    else:
+    except:
         return "Something went wrong when deleting the requested pod", 500
 
 def StatusHandler():
@@ -512,43 +491,34 @@ def StatusHandler():
     request_data_string = request.data.decode("utf-8")
     req = json.loads(request_data_string)[0]
     if req is None or not isinstance(req, dict):
+        print("Invalid status request body is: ", req)
         logging.error("Invalid request data")
         return "Invalid request data for getting status", 400
 
-    #print("REQ IS", req)
     ####### ELABORATE RESPONSE #################
     resp = [{"Name": [], "Namespace": [], "Status": [], }]
-    with open(InterLinkConfigInst['DataRootFolder'] + req['metadata']['name'] + ".jid", "r") as f:
-        jid_job = f.read()
-    if True:
-        if True:
-            this_resp = {}
-            podname = req['metadata']['name']
-            podnamespace = req['metadata']['namespace']
-            #print(type(podname), podname)
-            resp[0]["Name"] = podname
-            resp[0]["Namespace"] = podnamespace
-            ok = True
-            process = os.popen(f"condor_q {jid_job} --json")
-            preprocessed = process.read()
-            process.close()
-            #print(preprocessed)
-            try:
-                job_ = json.loads(preprocessed)
-                status = job_[0]["JobStatus"]
-                if status != 2 and status !=1:
-                    ok = False
-            except:
-                ok = False
-                logging.error("Something went wrong when retrieving job status")
-            if ok == True:
-                resp[0]["Status"] = 0
-            else:
-                resp[0]["Status"] = 1
-                #resp[0]["Status"] = 0
+    try:
+        with open(InterLinkConfigInst['DataRootFolder'] + req['metadata']['name'] + ".jid", "r") as f:
+            jid_job = f.read()
+        this_resp = {}
+        podname = req['metadata']['name']
+        podnamespace = req['metadata']['namespace']
+        resp[0]["Name"] = podname
+        resp[0]["Namespace"] = podnamespace
+        ok = True
+        process = os.popen(f"condor_q {jid_job} --json")
+        preprocessed = process.read()
+        process.close()
+        job_ = json.loads(preprocessed)
+        status = job_[0]["JobStatus"]
+        if status != 2 and status !=1:
+            ok = False
+        if ok == True:
+            resp[0]["Status"] = 0
+        else:
+            resp[0]["Status"] = 1
         return json.dumps(resp), 200
-
-    else:
+    except:
         return "Something went wrong when retrieving pod status", 500
 
 from flask import Flask, request
